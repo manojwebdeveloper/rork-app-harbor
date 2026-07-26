@@ -29,6 +29,8 @@ ui-debug.log
 *.p12
 *.mobileprovision
 GoogleService-Info.plist
+# Rork builds need the Firebase config bundled with the app
+!ios/Harbor/Resources/GoogleService-Info.plist
 .env
 .env.*
 !*.example
@@ -36,5 +38,8 @@ GoogleService-Info.plist
 # macOS
 .DS_Store
 
-# Generated project
-Harbor.xcodeproj/
+# Generated project (XcodeGen output at repo root only; the Rork-managed
+# project under ios/ must stay committed or builds break)
+/Harbor.xcodeproj/
+!ios/Harbor.xcodeproj/
+.rork
