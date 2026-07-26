@@ -1,4 +1,40 @@
-node_modules
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcworkspace/xcuserdata/
+
+# Build
+build/
+.build/
+
+# Dependency managers
+Pods/
+Carthage/Build/
+.swiftpm/
+node_modules/
+firebase/functions/lib/
+
+# Firebase local files
+.firebaserc
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+
+# Secrets
+*.p8
+*.p12
+*.mobileprovision
+GoogleService-Info.plist
 .env
-.expo
-.rork
+.env.*
+!*.example
+
+# macOS
+.DS_Store
+
+# Generated project
+Harbor.xcodeproj/
