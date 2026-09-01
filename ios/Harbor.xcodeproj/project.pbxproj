@@ -36,9 +36,22 @@
 		105FC5932E9EAD3200EA8BCF /* HarborUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HarborUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		10AA00012E9EAD3100EA8BCF /* Exceptions for "Harbor" folder in "Harbor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Resources/Info.plist,
+			);
+			target = 105FC5792E9EAD3100EA8BCF /* Harbor */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		105FC57C2E9EAD3100EA8BCF /* Harbor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				10AA00012E9EAD3100EA8BCF /* Exceptions for "Harbor" folder in "Harbor" target */,
+			);
 			path = Harbor;
 			sourceTree = "<group>";
 		};
@@ -419,7 +432,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Support/Info.plist";
+				INFOPLIST_FILE = "Harbor/Resources/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Harbor uses background location to keep an active sharing session updated after you leave the app.";
@@ -457,7 +470,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Support/Info.plist";
+				INFOPLIST_FILE = "Harbor/Resources/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Harbor uses background location to keep an active sharing session updated after you leave the app.";
