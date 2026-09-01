@@ -9,10 +9,18 @@ struct JoinCircleView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
+    /// Routing hook fired only after an invitation is accepted successfully.
+    private let onJoined: ((InvitationPreview) -> Void)?
+    /// Called whenever the view closes, accepted or cancelled.
     private let onFinished: () -> Void
 
-    init(initialCode: String = "", onFinished: @escaping () -> Void = {}) {
+    init(
+        initialCode: String = "",
+        onJoined: ((InvitationPreview) -> Void)? = nil,
+        onFinished: @escaping () -> Void = {}
+    ) {
         _code = State(initialValue: InvitationLink.normalizedCode(initialCode) ?? initialCode)
+        self.onJoined = onJoined
         self.onFinished = onFinished
     }
 
@@ -105,6 +113,7 @@ struct JoinCircleView: View {
 
         do {
             try await circleService.acceptInvitation(code: preview.code)
+            onJoined?(preview)
             onFinished()
             dismiss()
         } catch {

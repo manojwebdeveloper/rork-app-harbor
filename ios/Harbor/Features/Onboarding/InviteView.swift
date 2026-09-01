@@ -7,12 +7,24 @@ struct InviteView: View {
     @EnvironmentObject private var circleService: CircleService
     @Environment(\.dismiss) private var dismiss
 
-    let circle: FirebaseCircleSummary
+    let circleID: String
 
     @State private var invitation: InvitationDetails?
     @State private var isLoading = true
     @State private var showingQRCode = true
     @State private var errorMessage: String?
+
+    /// Routing hook for "Done". When nil, the view just dismisses.
+    private let onDone: (() -> Void)?
+
+    init(circleID: String, onDone: (() -> Void)? = nil) {
+        self.circleID = circleID
+        self.onDone = onDone
+    }
+
+    init(circle: FirebaseCircleSummary, onDone: (() -> Void)? = nil) {
+        self.init(circleID: circle.id, onDone: onDone)
+    }
 
     var body: some View {
         ScrollView {
@@ -88,7 +100,13 @@ struct InviteView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
+                Button("Done") {
+                    if let onDone {
+                        onDone()
+                    } else {
+                        dismiss()
+                    }
+                }
             }
         }
         .task {
@@ -103,7 +121,7 @@ struct InviteView: View {
         defer { isLoading = false }
 
         do {
-            invitation = try await circleService.createInvitation(circleID: circle.id)
+            invitation = try await circleService.createInvitation(circleID: circleID)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -112,7 +130,12 @@ struct InviteView: View {
     private func revoke(_ invitation: InvitationDetails) async {
         do {
             try await circleService.revokeInvitation(code: invitation.code)
-            dismiss()
+
+            if let onDone {
+                onDone()
+            } else {
+                dismiss()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

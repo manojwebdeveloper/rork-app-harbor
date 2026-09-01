@@ -34,7 +34,7 @@ struct HarborApp: App {
     }
 }
 
-/// Routes between launch, onboarding, sign-in and the four-tab shell.
+/// Routes between launch, intro, sign-in, circle setup and the four-tab shell.
 private struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authService: AuthService
@@ -46,18 +46,26 @@ private struct RootView: View {
                 FirebaseSetupRequiredView()
             } else if authService.isLoading {
                 LaunchView()
-            } else if !appState.hasCompletedOnboarding {
+            } else if !appState.hasCompletedIntro {
                 OnboardingView {
                     withAnimation(.easeInOut(duration: 0.35)) {
-                        appState.completeOnboarding()
+                        appState.completeIntro()
                     }
                 }
             } else if authService.user == nil {
                 SignInView()
+            } else if !appState.hasCompletedSetup {
+                OnboardingFlowView {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        appState.selectedTab = .map
+                        appState.completeSetup()
+                    }
+                }
             } else {
                 MainTabView()
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: authService.user?.uid)
         .task(id: authService.user?.uid) {
             circleService.observeCircles(for: authService.user?.uid)
         }

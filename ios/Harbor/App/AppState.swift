@@ -21,17 +21,34 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published private(set) var hasCompletedOnboarding: Bool
+    private enum Key {
+        static let intro = "hasCompletedOnboarding"
+        static let setup = "hasCompletedCircleSetup"
+    }
+
+    /// The 3-page privacy intro has been seen.
+    @Published private(set) var hasCompletedIntro: Bool
+    /// The post-sign-in setup sequence (circle + permission education) has been finished.
+    @Published private(set) var hasCompletedSetup: Bool
     @Published var selectedTab: Tab = .map
     @Published var selectedMemberID: UUID?
     @Published var pendingInvitationCode: String?
 
+    private let defaults: UserDefaults
+
     init(defaults: UserDefaults = .standard) {
-        hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
+        self.defaults = defaults
+        hasCompletedIntro = defaults.bool(forKey: Key.intro)
+        hasCompletedSetup = defaults.bool(forKey: Key.setup)
     }
 
-    func completeOnboarding(defaults: UserDefaults = .standard) {
-        defaults.set(true, forKey: "hasCompletedOnboarding")
-        hasCompletedOnboarding = true
+    func completeIntro() {
+        defaults.set(true, forKey: Key.intro)
+        hasCompletedIntro = true
+    }
+
+    func completeSetup() {
+        defaults.set(true, forKey: Key.setup)
+        hasCompletedSetup = true
     }
 }

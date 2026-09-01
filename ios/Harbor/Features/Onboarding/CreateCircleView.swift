@@ -10,6 +10,13 @@ struct CreateCircleView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
+    /// Routing hook: receives the new circle id and name. When nil, the view just dismisses.
+    private let onCreated: ((String, String) -> Void)?
+
+    init(onCreated: ((String, String) -> Void)? = nil) {
+        self.onCreated = onCreated
+    }
+
     var body: some View {
         Form {
             Section("Circle type") {
@@ -79,12 +86,17 @@ struct CreateCircleView: View {
         defer { isSubmitting = false }
 
         do {
-            _ = try await circleService.createCircle(
+            let circleID = try await circleService.createCircle(
                 name: name,
                 kind: kind,
                 expiresAt: kind == .trip ? expiresAt : nil
             )
-            dismiss()
+
+            if let onCreated {
+                onCreated(circleID, name.trimmingCharacters(in: .whitespacesAndNewlines))
+            } else {
+                dismiss()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

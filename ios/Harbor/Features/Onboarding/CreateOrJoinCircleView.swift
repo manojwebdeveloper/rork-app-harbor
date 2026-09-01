@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Placeholder — layout only. Routing to create/join arrives in the UI pass.
+/// Placeholder — layout only. The caller owns routing.
 struct CreateOrJoinCircleView: View {
-    @State private var showingCreate = false
-    @State private var showingJoin = false
+    let onCreate: () -> Void
+    let onJoin: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -16,9 +16,7 @@ struct CreateOrJoinCircleView: View {
             }
             .padding(.top, 12)
 
-            Button {
-                showingCreate = true
-            } label: {
+            Button(action: onCreate) {
                 optionRow(
                     symbol: "plus",
                     tint: Color(.calmTeal),
@@ -28,9 +26,7 @@ struct CreateOrJoinCircleView: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                showingJoin = true
-            } label: {
+            Button(action: onJoin) {
                 optionRow(
                     symbol: "qrcode",
                     tint: Color(.clearSky),
@@ -50,12 +46,6 @@ struct CreateOrJoinCircleView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
         .background(Color(uiColor: .systemBackground))
-        .sheet(isPresented: $showingCreate) {
-            NavigationStack { CreateCircleView() }
-        }
-        .sheet(isPresented: $showingJoin) {
-            JoinCircleView()
-        }
     }
 
     private func optionRow(
