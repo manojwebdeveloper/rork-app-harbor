@@ -1,158 +1,227 @@
 import SwiftUI
 
+/// The map tab, built to the Phase 2 design.
+///
+/// The map canvas, pins and member strip are populated with static placeholder people
+/// (`HarborSample`) because the location engine does not exist yet. Circle management
+/// still routes to the live Firebase screens from the You tab.
 struct MainMapView: View {
-    @EnvironmentObject private var circleService: CircleService
-    @EnvironmentObject private var locationService: LocationService
+    @EnvironmentObject private var appState: AppState
 
-    @State private var selectedMember: FirebaseCircleMember?
+    @State private var selectedCircleID: String = HarborSample.circles[0].id
+    @State private var selectedMember: SampleMember?
+    @State private var isSwitcherExpanded = false
+    @State private var isShowingSafeToast = false
+    @State private var isShowingSafeReceipt = false
+    @State private var isTripBannerVisible = true
+    @State private var isShowingNewCircle = false
+    @State private var path: [MapRoute] = []
+
+    private enum MapRoute: Hashable {
+        case manageCircles
+        case digestSettings
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if circleService.isLoading {
-                    loadingState
-                } else if let circle = circleService.selectedCircle {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 20) {
-                            CircleSelectorView(selected: circle)
+        NavigationStack(path: $path) {
+            ZStack(alignment: .top) {
+                MapCanvasView(
+                    members: members,
+                    selectedMemberID: selectedMember?.id,
+                    showsRoute: !selectedCircle.isTrip
+                ) { member in
+                    selectedMember = member
+                }
+                .ignoresSafeArea()
 
-                            if !locationService.isAuthorized {
-                                permissionBanner
-                            } else if locationService.isSharingPaused {
-                                pausedBanner
-                            }
+                mapControls
 
-                            mapPlaceholder(circle: circle)
+                VStack(spacing: 12) {
+                    topBar
 
-                            MemberCarouselView(
-                                members: circleService.members,
-                                selectedMemberID: selectedMember?.id
-                            ) { member in
-                                selectedMember = member
-                            }
+                    if isShowingSafeToast {
+                        SafeBroadcastToast(circleName: selectedCircle.name) {
+                            isShowingSafeReceipt = true
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 130)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
-                    .background(Color(uiColor: .systemGroupedBackground))
-                } else {
-                    noCircleState
+
+                    if selectedCircle.isTrip && isTripBannerVisible {
+                        TripEndingBanner(
+                            circleName: selectedCircle.name,
+                            onExtend: dismissTripBanner,
+                            onKeepPermanently: dismissTripBanner,
+                            onLetItEnd: dismissTripBanner
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
+                    if isSwitcherExpanded {
+                        CircleSwitcherMenu(
+                            circles: HarborSample.circles,
+                            selectedCircleID: selectedCircleID,
+                            onSelect: select,
+                            onManage: {
+                                collapseSwitcher()
+                                path.append(.manageCircles)
+                            },
+                            onNewCircle: {
+                                collapseSwitcher()
+                                isShowingNewCircle = true
+                            }
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+
+                VStack(spacing: 14) {
+                    Spacer()
+
+                    SafeBroadcastButton(action: broadcastSafe)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.horizontal, 20)
+
+                    MemberStatusStripView(
+                        members: members,
+                        selectedMemberID: selectedMember?.id,
+                        onSelect: { selectedMember = $0 },
+                        onSelectAll: { selectedMember = nil }
+                    )
+                    .padding(.bottom, 96)
                 }
             }
-            .navigationTitle("Map")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        CircleManagementView()
-                    } label: {
-                        Image(systemName: "person.3")
-                    }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: MapRoute.self) { route in
+                switch route {
+                case .manageCircles:
+                    ManageCirclesView()
+                case .digestSettings:
+                    WeeklyDigestSettingsView()
                 }
             }
         }
         .sheet(item: $selectedMember) { member in
-            MemberDetailSheetView(member: member)
-                .presentationDetents([.medium, .large])
-                .presentationContentInteraction(.scrolls)
+            MemberStatusSheetView(member: member) {
+                selectedMember = nil
+            }
+            .presentationDetents([.medium, .large])
+            .presentationContentInteraction(.scrolls)
+        }
+        .sheet(isPresented: $isShowingNewCircle) {
+            NewCircleFlowView { isShowingNewCircle = false }
+        }
+        .fullScreenCover(isPresented: $isShowingSafeReceipt) {
+            CircleActivityPreviewView {
+                isShowingSafeReceipt = false
+            }
         }
     }
 
-    private var loadingState: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("Finding your circle…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var selectedCircle: SampleCircle {
+        HarborSample.circles.first { $0.id == selectedCircleID } ?? HarborSample.circles[0]
     }
 
-    private var permissionBanner: some View {
-        banner(
-            symbol: "location.slash.fill",
-            tint: Color(.warmAmber),
-            title: "Location access is off",
-            detail: "Harbor can't share your location with your circle."
-        )
+    private var members: [SampleMember] {
+        selectedCircle.isTrip ? HarborSample.tripMembers : HarborSample.members
     }
 
-    private var pausedBanner: some View {
-        banner(
-            symbol: "pause.circle.fill",
-            tint: Color(.slate),
-            title: "Your location sharing is paused",
-            detail: "Your circle sees your last shared location."
-        )
-    }
-
-    private func banner(
-        symbol: String,
-        tint: Color,
-        title: String,
-        detail: String
-    ) -> some View {
+    private var topBar: some View {
         HStack(spacing: 12) {
+            Button {
+                appState.selectedTab = .you
+            } label: {
+                Circle()
+                    .fill(Color(.warmAmber).opacity(0.16))
+                    .frame(width: 42, height: 42)
+                    .overlay { Circle().stroke(Color(.warmAmber), lineWidth: 2) }
+                    .overlay {
+                        Text(HarborSample.you.initials)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color(.warmAmber))
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Your profile")
+
+            Spacer(minLength: 0)
+
+            CircleSelectorPill(circle: selectedCircle, isExpanded: isSwitcherExpanded) {
+                withAnimation(.snappy(duration: 0.25)) {
+                    isSwitcherExpanded.toggle()
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                path.append(.digestSettings)
+            } label: {
+                Image(systemName: "bell")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 42, height: 42)
+                    .background(Color(uiColor: .systemBackground))
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.1), radius: 10, y: 3)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Notification settings")
+        }
+    }
+
+    private var mapControls: some View {
+        VStack(spacing: 10) {
+            mapControl("location.viewfinder")
+            mapControl("location.north.fill")
+            mapControl("square.3.layers.3d")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .padding(.trailing, 16)
+        .padding(.top, 96)
+        .allowsHitTesting(true)
+    }
+
+    private func mapControl(_ symbol: String) -> some View {
+        Button { } label: {
             Image(systemName: symbol)
-                .foregroundStyle(tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .frame(width: 42, height: 42)
+                .background(Color(uiColor: .systemBackground))
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.1), radius: 10, y: 3)
         }
-        .harborCard()
+        .buttonStyle(.plain)
     }
 
-    private func mapPlaceholder(circle: FirebaseCircleSummary) -> some View {
-        VStack(spacing: 18) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color(.seaGlass).opacity(0.55))
-                    .frame(height: 210)
-
-                VStack(spacing: 13) {
-                    Image(systemName: "location.slash.fill")
-                        .font(.system(size: 38, weight: .semibold))
-                        .foregroundStyle(Color(.calmTeal))
-                    Text("Real location sharing is not connected yet")
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                    Text("This screen is using your real Firebase circle and members. No sample coordinates are being shown.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 22)
-                }
-            }
-
-            HStack {
-                Label("\(circleService.members.count) members", systemImage: "person.2.fill")
-                Spacer()
-                if let expiresAt = circle.expiresAt {
-                    Label(expiresAt.formatted(date: .abbreviated, time: .shortened), systemImage: "timer")
-                } else {
-                    Label("No expiry", systemImage: "infinity")
-                }
-            }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.secondary)
+    private func select(_ circle: SampleCircle) {
+        withAnimation(.snappy(duration: 0.25)) {
+            selectedCircleID = circle.id
+            isSwitcherExpanded = false
+            isTripBannerVisible = true
+            selectedMember = nil
         }
-        .harborCard()
     }
 
-    private var noCircleState: some View {
-        ContentUnavailableView {
-            Label("Create or join a circle", systemImage: "person.3.sequence.fill")
-        } description: {
-            Text("Your real Firebase circles will appear here. Harbor does not insert sample families into signed-in accounts.")
-        } actions: {
-            NavigationLink("Manage circles") {
-                CircleManagementView()
-            }
-            .buttonStyle(.borderedProminent)
+    private func collapseSwitcher() {
+        withAnimation(.snappy(duration: 0.25)) {
+            isSwitcherExpanded = false
+        }
+    }
+
+    private func dismissTripBanner() {
+        withAnimation(.snappy(duration: 0.3)) {
+            isTripBannerVisible = false
+        }
+    }
+
+    private func broadcastSafe() {
+        withAnimation(.snappy(duration: 0.3)) {
+            isSwitcherExpanded = false
+            isShowingSafeToast = true
         }
     }
 }

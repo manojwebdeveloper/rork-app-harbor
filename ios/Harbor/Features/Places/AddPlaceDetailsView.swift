@@ -1,13 +1,12 @@
 import SwiftUI
 
-/// Placeholder — step 4 of 4: name, category and alert preferences.
+/// Placeholder — step 3 of 5: name and category. Alerts move to the next step.
 struct AddPlaceDetailsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
     @State private var category: Place.Category = .custom
-    @State private var arrivalAlertsEnabled = true
-    @State private var departureAlertsEnabled = true
+    @State private var isShowingAlertsStep = false
 
     var body: some View {
         Form {
@@ -25,11 +24,6 @@ struct AddPlaceDetailsView: View {
                 .pickerStyle(.menu)
             }
 
-            Section("Alerts") {
-                Toggle("Arrival alerts", isOn: $arrivalAlertsEnabled)
-                Toggle("Departure alerts", isOn: $departureAlertsEnabled)
-            }
-
             Section {
                 Text("Saving places needs the location engine. This screen is layout only for now.")
                     .font(.footnote)
@@ -40,10 +34,22 @@ struct AddPlaceDetailsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { dismiss() }
+                Button("Next") { isShowingAlertsStep = true }
                     .fontWeight(.semibold)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(trimmedName.isEmpty)
             }
         }
+        .navigationDestination(isPresented: $isShowingAlertsStep) {
+            PlaceAlertsStepView(
+                placeName: trimmedName.isEmpty ? "this place" : trimmedName,
+                placeAddress: "24 Willow Road"
+            ) {
+                dismiss()
+            }
+        }
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

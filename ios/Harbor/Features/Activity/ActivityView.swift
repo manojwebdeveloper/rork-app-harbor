@@ -1,64 +1,39 @@
 import SwiftUI
 
-/// Placeholder — layout only. Real events arrive with the location and notification services.
+/// Activity tab — layout only. Entries come from static placeholder data.
 struct ActivityView: View {
-    @State private var selectedFilter: ActivityFilter = .all
     @State private var isCheckingIn = false
     @State private var showingConfirmation = false
 
-    enum ActivityFilter: String, CaseIterable, Identifiable {
-        case all = "All"
-        case places = "Places"
-        case checkIns = "Check-ins"
-        case system = "System"
-
-        var id: String { rawValue }
-    }
-
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(ActivityFilter.allCases) { filter in
-                            Button {
-                                withAnimation(.snappy(duration: 0.2)) {
-                                    selectedFilter = filter
-                                }
-                            } label: {
-                                Text(filter.rawValue)
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .foregroundStyle(
-                                        selectedFilter == filter ? .white : Color.primary
-                                    )
-                                    .background(
-                                        selectedFilter == filter
-                                            ? Color(.calmTeal)
-                                            : Color(uiColor: .secondarySystemBackground)
-                                    )
-                                    .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    NavigationLink {
+                        WeeklyDigestView()
+                    } label: {
+                        digestCard
                     }
-                }
-                .contentMargins(.horizontal, 20)
+                    .buttonStyle(.plain)
 
-                ContentUnavailableView {
-                    Label("No activity yet", systemImage: "clock")
-                } description: {
-                    Text("Arrivals, departures and check-ins appear here once the location and notification services are connected.")
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Text("TODAY")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 24)
+                        .padding(.bottom, 12)
 
-                Text("Activity is visible only to your circle")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.bottom, 110)
+                    ActivityTimelineView(entries: HarborSample.activityToday)
+
+                    Text("Activity is visible only to your circle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 20)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 130)
             }
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Activity")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -85,6 +60,41 @@ struct ActivityView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var digestCard: some View {
+        HStack(spacing: 13) {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color(.seaGlass))
+                .frame(width: 40, height: 40)
+                .overlay {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color(.calmTeal))
+                }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Your week")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color.primary)
+                Text("\(HarborSample.digestRange) · \(HarborSample.digestCheckIns) check-ins, \(HarborSample.digestPlaces) places")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: HarborRadius.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: HarborRadius.card, style: .continuous)
+                .stroke(Color(.mineralBorder).opacity(0.7), lineWidth: 0.5)
         }
     }
 }
