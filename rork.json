@@ -1,10 +1,13 @@
 {
+  "$schema": "https://rork.com/schema/rork.json",
   "apps": [
     {
       "name": "Harbor",
       "path": "ios",
-      "framework": "swift"
+      "framework": "swift",
+      "settings": {
+        "iosBundleId": "app.appamore.harbor"
+      }
     }
-  ],
-  "$schema": "https://rork.com/schema/rork.json"
+  ]
 }
