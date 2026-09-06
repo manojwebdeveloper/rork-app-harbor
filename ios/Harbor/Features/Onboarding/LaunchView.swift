@@ -24,7 +24,7 @@ struct LaunchView: View {
                 .padding(.bottom, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground))
+        .background(Color(.launchBackground))
     }
 }
 
