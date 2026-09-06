@@ -10,10 +10,7 @@ struct CardModifier: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: HarborRadius.card, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: HarborRadius.card, style: .continuous)
-                    .stroke(
-                        Color(.mineralBorder).opacity(colorScheme == .dark ? 0.16 : 0.8),
-                        lineWidth: 0.5
-                    )
+                    .stroke(Color(.mineralBorder).opacity(0.8), lineWidth: 0.5)
             }
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.07), radius: 16, y: 4)
     }
