@@ -70,9 +70,10 @@ private struct RootView: View {
             circleService.observeCircles(for: authService.user?.uid)
         }
         .sheet(isPresented: invitationSheetBinding) {
-            JoinCircleView(initialCode: appState.pendingInvitationCode ?? "") {
-                appState.pendingInvitationCode = nil
-            }
+            JoinCircleView(
+                initialCode: appState.pendingInvitationCode ?? "",
+                onFinished: { appState.pendingInvitationCode = nil }
+            )
             .environmentObject(circleService)
         }
     }
