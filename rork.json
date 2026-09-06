@@ -6,7 +6,8 @@
       "path": "ios",
       "framework": "swift",
       "settings": {
-        "iosBundleId": "app.appamore.harbor"
+        "iosBundleId": "app.appamore.harbor",
+        "displayName": "Harbor:Private Family Location"
       }
     }
   ]
