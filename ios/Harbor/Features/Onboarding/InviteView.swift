@@ -14,16 +14,21 @@ struct InviteView: View {
     @State private var showingQRCode = true
     @State private var errorMessage: String?
 
-    /// Routing hook for "Done". When nil, the view just dismisses.
+    /// Routing hook for the confirmation button. When nil, the view just dismisses.
     private let onDone: (() -> Void)?
 
-    init(circleID: String, onDone: (() -> Void)? = nil) {
+    /// Label for the confirmation button. Onboarding passes "Continue" because the
+    /// bar has no back button there — the only action available moves the flow forward.
+    private let doneTitle: String
+
+    init(circleID: String, doneTitle: String = "Done", onDone: (() -> Void)? = nil) {
         self.circleID = circleID
+        self.doneTitle = doneTitle
         self.onDone = onDone
     }
 
-    init(circle: FirebaseCircleSummary, onDone: (() -> Void)? = nil) {
-        self.init(circleID: circle.id, onDone: onDone)
+    init(circle: FirebaseCircleSummary, doneTitle: String = "Done", onDone: (() -> Void)? = nil) {
+        self.init(circleID: circle.id, doneTitle: doneTitle, onDone: onDone)
     }
 
     var body: some View {
@@ -100,7 +105,7 @@ struct InviteView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") {
+                Button(doneTitle) {
                     if let onDone {
                         onDone()
                     } else {

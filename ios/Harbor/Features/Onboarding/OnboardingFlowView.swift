@@ -46,7 +46,7 @@ struct OnboardingFlowView: View {
             }
 
         case let .invite(circleID, circleName):
-            InviteView(circleID: circleID) {
+            InviteView(circleID: circleID, doneTitle: "Continue") {
                 path.append(.joined(circleName: circleName))
             }
             .navigationBarBackButtonHidden()
