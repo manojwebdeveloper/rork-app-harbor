@@ -238,8 +238,47 @@ final class CircleService: ObservableObject {
             )
             return response.data
         } catch {
-            errorMessage = error.localizedDescription
-            throw error
+            let nsError = error as NSError
+            NSLog(
+                "[HarborPrivateFamilyLocation] Callable %@ failed code=%ld domain=%@ details=%@",
+                name,
+                nsError.code,
+                nsError.domain,
+                String(describing: nsError.userInfo)
+            )
+
+            let friendlyMessage = Self.readableMessage(for: error, callable: name)
+            errorMessage = friendlyMessage
+            throw CircleServiceError.backend(friendlyMessage)
+        }
+    }
+
+    /// Callable errors arrive as opaque gRPC status names ("Not Found", "Internal"),
+    /// which tell nobody what to actually do. Map the ones we can act on.
+    nonisolated private static func readableMessage(for error: Error, callable: String) -> String {
+        let nsError = error as NSError
+
+        guard nsError.domain == FunctionsErrorDomain,
+              let code = FunctionsErrorCode(rawValue: nsError.code) else {
+            return error.localizedDescription
+        }
+
+        switch code {
+        case .notFound:
+            return """
+            Harbor's backend is not deployed to this Firebase project yet, so \
+            "\(callable)" could not be reached. Deploy the Cloud Functions, then try again.
+            """
+        case .unauthenticated:
+            return "Your session has expired. Sign in again, then try once more."
+        case .permissionDenied:
+            return "You do not have permission to do that in this circle."
+        case .unavailable, .deadlineExceeded:
+            return "Harbor could not reach the server. Check your connection and try again."
+        case .resourceExhausted:
+            return "Too many attempts in a short time. Wait a moment, then try again."
+        default:
+            return error.localizedDescription
         }
     }
 
@@ -284,6 +323,9 @@ enum CircleServiceError: LocalizedError {
     case firebaseNotConfigured
     case invalidInvitationCode
     case invalidServerResponse
+    /// Wraps a server-side failure that has already been translated into a
+    /// message worth showing, so views can surface `localizedDescription` directly.
+    case backend(String)
 
     var errorDescription: String? {
         switch self {
@@ -293,6 +335,8 @@ enum CircleServiceError: LocalizedError {
             "Enter a valid six-digit invitation code."
         case .invalidServerResponse:
             "HarborPrivateFamilyLocation received an invalid response. Please try again."
+        case let .backend(message):
+            message
         }
     }
 }
