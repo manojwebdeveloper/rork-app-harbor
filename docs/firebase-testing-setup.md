@@ -7,9 +7,14 @@ This milestone uses Firebase Authentication, Firestore and callable Cloud Functi
 1. Create or select a Firebase project.
 2. Add an Apple/iOS application with bundle identifier `com.appamore.harbor`.
 3. Download `GoogleService-Info.plist`.
-4. Place it at `ios/Harbor/Resources/GoogleService-Info.plist`.
+4. Place it at `ios/HarborFamilyLocation/Resources/GoogleService-Info.plist`.
 
-The plist is intentionally ignored by Git and must never be committed.
+The plist must be committed at that exact path — Rork's remote builder has no other way to
+receive it. `.gitignore` ignores `GoogleService-Info.plist` everywhere except there. Every
+other copy stays untracked.
+
+The values in this file are client identifiers, not secrets; Firestore Security Rules and
+App Check are what protect the backend.
 
 ## 2. Enable Sign in with Apple
 
@@ -18,7 +23,7 @@ The plist is intentionally ignored by Git and must never be committed.
 3. Enter the Apple Team ID, Key ID and private key details requested by Firebase.
 4. In Xcode, select the correct Apple Development Team and confirm the Sign in with Apple capability is present.
 
-The project already contains `Harbor.entitlements` and the XcodeGen capability configuration.
+The project already contains `HarborFamilyLocation.entitlements` and the XcodeGen capability configuration.
 
 ## 3. Create Firestore
 
@@ -56,15 +61,20 @@ The callable functions deploy to `europe-west2`.
 
 ## 5. Generate and run the iOS project
 
+Rork builds `ios/HarborFamilyLocation.xcodeproj` directly; that project is committed and is the
+source of truth. `project.yml` and XcodeGen are only for regenerating a standalone project
+locally — running `xcodegen generate` writes `HarborFamilyLocation.xcodeproj` at the repository
+root and leaves the Rork project under `ios/` untouched.
+
 ```bash
 brew install xcodegen
 xcodegen generate
-open Harbor.xcodeproj
+open HarborFamilyLocation.xcodeproj
 ```
 
 In Xcode:
 
-1. Select the Harbor target.
+1. Select the HarborFamilyLocation target.
 2. Choose the correct development team.
 3. Confirm the bundle identifier matches the Firebase iOS app.
 4. Confirm Sign in with Apple is enabled under Signing & Capabilities.

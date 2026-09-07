@@ -26,19 +26,23 @@ Push notifications, subscriptions and the real background location upload engine
 
 ## Repository structure
 
-- `ios/Harbor/` — SwiftUI application source
+- `ios/HarborFamilyLocation/` — SwiftUI application source
+- `ios/HarborFamilyLocation.xcodeproj` — the committed Xcode project Rork builds
+- `ios/HarborWidget/` — home screen and Lock Screen widgets
 - `firebase/functions/` — trusted callable API
 - `firebase/firestore.rules` — client access policy
 - `docs/` — product, architecture and setup decisions
-- `project.yml` — XcodeGen project definition
+- `project.yml` — XcodeGen definition for regenerating a standalone project locally
 
 ## Local setup
 
 1. Follow `docs/firebase-testing-setup.md` to create Firebase and enable Sign in with Apple.
-2. Add `GoogleService-Info.plist` to `ios/Harbor/Resources/`.
-3. Install XcodeGen: `brew install xcodegen`.
-4. Run `xcodegen generate` from the repository root.
-5. Open `Harbor.xcodeproj`.
-6. Select the correct Apple development team and run on a physical iPhone.
+2. Add `GoogleService-Info.plist` to `ios/HarborFamilyLocation/Resources/`.
+3. Open `ios/HarborFamilyLocation.xcodeproj` directly, or regenerate a standalone project:
+   `brew install xcodegen && xcodegen generate` from the repository root.
+4. Select the correct Apple development team and run on a physical iPhone.
+
+Bundle identifier: `com.appamore.harbor`. It must match the iOS app registered in Firebase,
+or sign-in fails at runtime even though the build succeeds.
 
 Firebase Apple SDK `12.16.0` is pinned through Swift Package Manager in `project.yml`.
