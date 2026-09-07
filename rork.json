@@ -7,7 +7,7 @@
       "framework": "swift",
       "settings": {
         "displayName": "Harbor: Family Location",
-        "iosBundleId": "app.appamore.harbor"
+        "iosBundleId": "com.appamore.harbor"
       }
     }
   ]
