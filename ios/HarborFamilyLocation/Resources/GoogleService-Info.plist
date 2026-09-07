@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>API_KEY</key>
-	<string>AIzaSyCFKtXyh4biEr2dz3wCf6u2I9lhE3sXZfc</string>
+	<string>AIzaSyCOk-NfSvmn65dF2rHx3x6C60X2lEcLIxo</string>
 	<key>GCM_SENDER_ID</key>
-	<string>821321387186</string>
+	<string>847252790003</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>app.appamore.harbor</string>
+	<string>com.appamore.harbor</string>
 	<key>PROJECT_ID</key>
-	<string>harbor-9c856</string>
+	<string>harbor-2d498</string>
 	<key>STORAGE_BUCKET</key>
-	<string>harbor-9c856.firebasestorage.app</string>
+	<string>harbor-2d498.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:821321387186:ios:5a41c376d6327008040dab</string>
+	<string>1:847252790003:ios:1d3ba59008e886b97d3586</string>
 </dict>
 </plist>
