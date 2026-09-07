@@ -30,7 +30,7 @@ ui-debug.log
 *.mobileprovision
 GoogleService-Info.plist
 # Rork builds need the Firebase config bundled with the app
-!ios/Harbor/Resources/GoogleService-Info.plist
+!ios/HarborFamilyLocation/Resources/GoogleService-Info.plist
 .env
 .env.*
 !*.example
