@@ -6,14 +6,12 @@ struct LaunchView: View {
         VStack(spacing: 18) {
             Spacer()
 
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(HarborPrivateFamilyLocationGradient.brand)
+            Image("AppIconMark")
+                .resizable()
+                .scaledToFill()
                 .frame(width: 76, height: 76)
-                .overlay {
-                    Image(systemName: "person.3.sequence.fill")
-                        .font(.system(size: 30, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: Color(.calmTeal).opacity(0.30), radius: 20, y: 10)
 
             Text("HarborPrivateFamilyLocation")
                 .font(HarborPrivateFamilyLocationTypography.title)
