@@ -112,7 +112,13 @@ final class AuthService: ObservableObject {
                 NSLog("[HarborPrivateFamilyLocationAuth] Guest profile write skipped: %@", error.localizedDescription)
             }
         } catch {
-            NSLog("[HarborPrivateFamilyLocationAuth] Guest sign-in failed: %@", (error as NSError).description)
+            let nsError = error as NSError
+            NSLog(
+                "[HarborPrivateFamilyLocationAuth] Guest sign-in failed code=%ld domain=%@ details=%@",
+                nsError.code,
+                nsError.domain,
+                String(describing: nsError.userInfo)
+            )
             errorMessage = readableMessage(for: error)
         }
     }
@@ -231,11 +237,33 @@ final class AuthService: ObservableObject {
            authorizationError.code == .canceled {
             return "Sign in was cancelled."
         }
-        if (error as NSError).code == AuthErrorCode.operationNotAllowed.rawValue {
-            return "Guest sign-in is turned off for this Firebase project. Enable Anonymous in Firebase console → Authentication → Sign-in method, then try again."
+
+        let nsError = error as NSError
+
+        if nsError.code == AuthErrorCode.operationNotAllowed.rawValue {
+            return Self.signInMethodDisabledMessage
         }
+
+        // A Firebase project whose Authentication section has never been set up returns
+        // CONFIGURATION_NOT_FOUND, which the SDK surfaces as an opaque "internal error".
+        if nsError.code == AuthErrorCode.internalError.rawValue {
+            if String(describing: nsError.userInfo).contains("CONFIGURATION_NOT_FOUND") {
+                return Self.signInMethodDisabledMessage
+            }
+            return "Firebase rejected the sign-in request. Confirm Authentication is set up for this project, then try again."
+        }
+
+        if nsError.code == AuthErrorCode.networkError.rawValue {
+            return "No connection to Firebase. Check your network and try again."
+        }
+
         return error.localizedDescription
     }
+
+    private static let signInMethodDisabledMessage = """
+    Guest sign-in is not enabled for this Firebase project. \
+    Open Firebase console → Authentication → Sign-in method, enable Anonymous, then try again.
+    """
 
     private static func sha256(_ input: String) -> String {
         let digest = SHA256.hash(data: Data(input.utf8))
