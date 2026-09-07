@@ -220,6 +220,41 @@ final class CircleService: ObservableObject {
         )
     }
 
+    func extendTrip(circleID: String, newExpiresAt: Date) async throws {
+        _ = try await call(
+            "updateCircleExpiry",
+            payload: NSDictionary(dictionary: [
+                "circleId": circleID,
+                "action": "extend",
+                "expiresAtMs": NSNumber(value: Int64(newExpiresAt.timeIntervalSince1970 * 1_000))
+            ])
+        )
+    }
+
+    func keepCirclePermanently(circleID: String) async throws {
+        _ = try await call(
+            "updateCircleExpiry",
+            payload: NSDictionary(dictionary: ["circleId": circleID, "action": "keepPermanently"])
+        )
+    }
+
+    func sendSafeBroadcast(circleID: String) async throws {
+        _ = try await call(
+            "sendSafeBroadcast",
+            payload: NSDictionary(object: circleID, forKey: "circleId" as NSString)
+        )
+    }
+
+    func setSharingEnabled(_ isEnabled: Bool, circleID: String) async throws {
+        guard isFirebaseConfigured, let userID = observedUserID else {
+            throw CircleServiceError.firebaseNotConfigured
+        }
+        try await Firestore.firestore()
+            .collection("circles").document(circleID)
+            .collection("members").document(userID)
+            .setData(["sharingEnabled": isEnabled, "updatedAt": FieldValue.serverTimestamp()], merge: true)
+    }
+
     private func call(
         _ name: String,
         payload: NSDictionary

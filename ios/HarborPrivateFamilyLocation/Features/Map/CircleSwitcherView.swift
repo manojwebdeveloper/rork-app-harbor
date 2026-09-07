@@ -148,9 +148,9 @@ struct CircleSwitcherMenu: View {
     }
 
     private func subtitle(for circle: SampleCircle) -> String {
-        circle.isTrip
-            ? circle.durationText
-            : "\(circle.memberCount) people · sharing"
+        if circle.isTrip { return circle.durationText }
+        guard let memberCount = circle.memberCount else { return "Sharing" }
+        return "\(memberCount) people · sharing"
     }
 
     private func actionRow(symbol: String, title: String) -> some View {

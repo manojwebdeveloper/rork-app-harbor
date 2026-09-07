@@ -8,13 +8,14 @@ struct HarborPrivateFamilyLocationApp: App {
     @StateObject private var appState: AppState
     @StateObject private var authService: AuthService
     @StateObject private var circleService: CircleService
-    @StateObject private var locationService = LocationService()
+    @StateObject private var locationService: LocationService
 
     init() {
         let firebaseConfigured = FirebaseBootstrap.configureIfPossible()
         _appState = StateObject(wrappedValue: AppState())
         _authService = StateObject(wrappedValue: AuthService(firebaseConfigured: firebaseConfigured))
         _circleService = StateObject(wrappedValue: CircleService(firebaseConfigured: firebaseConfigured))
+        _locationService = StateObject(wrappedValue: LocationService(firebaseConfigured: firebaseConfigured))
     }
 
     var body: some Scene {
@@ -39,6 +40,7 @@ private struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var locationService: LocationService
 
     var body: some View {
         Group {
@@ -68,6 +70,7 @@ private struct RootView: View {
         .animation(.easeInOut(duration: 0.3), value: authService.user?.uid)
         .task(id: authService.user?.uid) {
             circleService.observeCircles(for: authService.user?.uid)
+            locationService.observeSharingCircles(for: authService.user?.uid)
         }
         .sheet(isPresented: invitationSheetBinding) {
             JoinCircleView(

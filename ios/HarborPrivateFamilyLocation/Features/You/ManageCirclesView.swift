@@ -71,7 +71,7 @@ struct ManageCirclesView: View {
                         }
                     }
 
-                    Text("\(circle.memberCount) people · \(circle.durationText)")
+                    Text("\(circle.memberCount.map(String.init) ?? "—") people · \(circle.durationText)")
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                 }

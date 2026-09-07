@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 /// Static, hard-coded data used to populate the Phase 2 layout screens.
@@ -61,12 +62,17 @@ struct SampleMember: Identifiable, Hashable {
     let lastUpdate: String
     let accuracy: String
     let sharing: String
-    /// Position on the stylised map canvas, in unit coordinates.
-    let mapPoint: CGPoint
+    let coordinate: CLLocationCoordinate2D
 
     var isBatteryLow: Bool {
         guard let batteryPercent else { return false }
         return batteryPercent <= 20
+    }
+
+    static func == (lhs: SampleMember, rhs: SampleMember) -> Bool { lhs.id == rhs.id }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }
 
@@ -74,7 +80,9 @@ struct SampleCircle: Identifiable, Hashable {
     let id: String
     let name: String
     let tint: SampleTint
-    let memberCount: Int
+    /// `nil` when the count isn't known yet (real circles other than the
+    /// selected one don't fetch member counts today — see MainMapView).
+    let memberCount: Int?
     let isTrip: Bool
     /// e.g. "permanent" or "Ends tomorrow, 8:00 PM".
     let durationText: String
@@ -135,7 +143,7 @@ enum HarborPrivateFamilyLocationSample {
             lastUpdate: "Just now",
             accuracy: "Within 12 m",
             sharing: "On · always",
-            mapPoint: CGPoint(x: 0.26, y: 0.26)
+            coordinate: CLLocationCoordinate2D(latitude: 51.4613, longitude: -0.3037)
         ),
         SampleMember(
             id: "james",
@@ -152,7 +160,7 @@ enum HarborPrivateFamilyLocationSample {
             lastUpdate: "Live now",
             accuracy: "Within 30 m",
             sharing: "On · always",
-            mapPoint: CGPoint(x: 0.62, y: 0.44)
+            coordinate: CLLocationCoordinate2D(latitude: 51.4085, longitude: -0.9159)
         ),
         SampleMember(
             id: "emily",
@@ -169,7 +177,7 @@ enum HarborPrivateFamilyLocationSample {
             lastUpdate: "4 min ago",
             accuracy: "Within 25 m",
             sharing: "On · always",
-            mapPoint: CGPoint(x: 0.74, y: 0.62)
+            coordinate: CLLocationCoordinate2D(latitude: 51.4650, longitude: -0.3200)
         )
     ]
 
@@ -188,7 +196,7 @@ enum HarborPrivateFamilyLocationSample {
         lastUpdate: "Just now",
         accuracy: "Within 10 m",
         sharing: "On · always",
-        mapPoint: CGPoint(x: 0.3, y: 0.7)
+        coordinate: CLLocationCoordinate2D(latitude: 51.4620, longitude: -0.3050)
     )
 
     static let tripMembers: [SampleMember] = [
@@ -207,7 +215,7 @@ enum HarborPrivateFamilyLocationSample {
             lastUpdate: "6 min ago",
             accuracy: "Within 20 m",
             sharing: "On · until the trip ends",
-            mapPoint: CGPoint(x: 0.26, y: 0.26)
+            coordinate: CLLocationCoordinate2D(latitude: 48.8539, longitude: 2.3340)
         ),
         SampleMember(
             id: "emily-trip",
@@ -224,7 +232,7 @@ enum HarborPrivateFamilyLocationSample {
             lastUpdate: "2 min ago",
             accuracy: "Within 18 m",
             sharing: "On · until the trip ends",
-            mapPoint: CGPoint(x: 0.62, y: 0.44)
+            coordinate: CLLocationCoordinate2D(latitude: 48.8606, longitude: 2.3376)
         )
     ]
 

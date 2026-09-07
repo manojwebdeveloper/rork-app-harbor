@@ -1,96 +1,54 @@
+import MapKit
 import SwiftUI
 
-/// Stylised map backdrop used until the real location engine lands.
-/// Draws parks, roads and an optional route so the Phase 2 map layout can be reviewed
-/// without MapKit or any real coordinates.
+/// Real MapKit map with member pins at their live coordinates. Replaced the
+/// original hand-drawn Phase 2 canvas, which positioned members with an
+/// arbitrary unit-square `mapPoint` that had no relationship to a real
+/// latitude/longitude and so couldn't display genuine location data.
 struct MapCanvasView: View {
     let members: [SampleMember]
     let selectedMemberID: String?
     var showsRoute = true
     let onSelectMember: (SampleMember) -> Void
 
+    @State private var cameraPosition: MapCameraPosition = .automatic
+
     var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
+        Map(position: $cameraPosition) {
+            if showsRoute, members.count > 1 {
+                MapPolyline(coordinates: members.map(\.coordinate))
+                    .stroke(Color(.clearSky).opacity(0.55), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            }
 
-            ZStack {
-                Color(.mapCanvas)
-
-                parks(in: size)
-                roads(in: size)
-
-                if showsRoute, members.count > 1 {
-                    route(in: size)
-                }
-
-                ForEach(members) { member in
+            ForEach(members) { member in
+                Annotation(member.name, coordinate: member.coordinate, anchor: .bottom) {
                     Button {
                         onSelectMember(member)
                     } label: {
                         MapPinView(member: member, isSelected: member.id == selectedMemberID)
                     }
                     .buttonStyle(.plain)
-                    .position(
-                        x: member.mapPoint.x * size.width,
-                        y: member.mapPoint.y * size.height
-                    )
                 }
             }
         }
+        .onAppear { focusCamera() }
+        .onChange(of: members.map(\.id)) { _, _ in focusCamera() }
     }
 
-    private func parks(in size: CGSize) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color(.mapPark))
-                .frame(width: size.width * 0.42, height: size.height * 0.19)
-                .position(x: size.width * 0.9, y: size.height * 0.2)
+    private func focusCamera() {
+        guard !members.isEmpty else { return }
 
-            Circle()
-                .fill(Color(.mapPark))
-                .frame(width: size.width * 0.86)
-                .position(x: size.width * 0.12, y: size.height * 0.94)
-        }
-    }
-
-    private func roads(in size: CGSize) -> some View {
-        ZStack {
-            road(from: CGPoint(x: 0.8, y: -0.05), to: CGPoint(x: 0.34, y: 1.05), in: size, width: 22)
-            road(from: CGPoint(x: -0.05, y: 0.47), to: CGPoint(x: 1.05, y: 0.53), in: size, width: 14)
-            road(from: CGPoint(x: -0.05, y: 0.29), to: CGPoint(x: 1.05, y: 0.17), in: size, width: 9)
-            road(from: CGPoint(x: -0.05, y: 0.74), to: CGPoint(x: 1.05, y: 0.84), in: size, width: 9)
-        }
-    }
-
-    private func road(
-        from start: CGPoint,
-        to end: CGPoint,
-        in size: CGSize,
-        width: CGFloat
-    ) -> some View {
-        Path { path in
-            path.move(to: CGPoint(x: start.x * size.width, y: start.y * size.height))
-            path.addLine(to: CGPoint(x: end.x * size.width, y: end.y * size.height))
-        }
-        .stroke(Color(.mapRoad), style: StrokeStyle(lineWidth: width, lineCap: .round))
-    }
-
-    /// A soft travel line between the first two members, matching the design export.
-    private func route(in size: CGSize) -> some View {
-        let start = members[0].mapPoint
-        let end = members[1].mapPoint
-
-        return Path { path in
-            path.move(to: CGPoint(x: start.x * size.width, y: (start.y + 0.03) * size.height))
-            path.addQuadCurve(
-                to: CGPoint(x: end.x * size.width, y: end.y * size.height),
-                control: CGPoint(x: (start.x + 0.02) * size.width, y: (end.y - 0.02) * size.height)
+        if members.count == 1, let coordinate = members.first?.coordinate {
+            cameraPosition = .region(
+                MKCoordinateRegion(center: coordinate, span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02))
             )
+            return
         }
-        .stroke(
-            Color(.clearSky).opacity(0.55),
-            style: StrokeStyle(lineWidth: 3, lineCap: .round)
-        )
+
+        let mapRect = members.reduce(MKMapRect.null) { partial, member in
+            partial.union(MKMapRect(origin: MKMapPoint(member.coordinate), size: MKMapSize(width: 0, height: 0)))
+        }
+        cameraPosition = .rect(mapRect.insetBy(dx: -mapRect.width * 0.4, dy: -mapRect.height * 0.4))
     }
 }
 

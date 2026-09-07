@@ -28,6 +28,10 @@ targets:
         product: FirebaseFirestore
       - package: Firebase
         product: FirebaseFunctions
+      - package: Firebase
+        product: FirebaseDatabase
+      - package: Firebase
+        product: FirebaseMessaging
     entitlements:
       path: ios/HarborPrivateFamilyLocation/Resources/HarborPrivateFamilyLocation.entitlements
       properties:

@@ -1,21 +1,27 @@
+import CoreLocation
 import SwiftUI
 
-/// The map tab, built to the Phase 2 design.
-///
-/// The map canvas, pins and member strip are populated with static placeholder people
-/// (`HarborPrivateFamilyLocationSample`) because the location engine does not exist yet. Circle management
-/// still routes to the live Firebase screens from the You tab.
+/// The map tab. Circles and members are real, Firestore/Realtime-Database-backed
+/// data from `CircleService` and `LiveCircleLocationsService` — see those types
+/// for how a `FirebaseCircleSummary`/`FirebaseCircleMember` plus a live RTDB tick
+/// become the `SampleCircle`/`SampleMember` view models the Phase 2 subviews expect.
 struct MainMapView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var circleService: CircleService
+    @StateObject private var liveLocations = LiveCircleLocationsService(firebaseConfigured: true)
 
-    @State private var selectedCircleID: String = HarborPrivateFamilyLocationSample.circles[0].id
-    @State private var selectedMember: SampleMember?
+    @State private var selectedMemberID: String?
     @State private var isSwitcherExpanded = false
     @State private var isShowingSafeToast = false
     @State private var isShowingSafeReceipt = false
     @State private var isTripBannerVisible = true
     @State private var isShowingNewCircle = false
+    @State private var isSendingSafeBroadcast = false
+    @State private var isUpdatingTrip = false
+    @State private var errorMessage: String?
     @State private var path: [MapRoute] = []
+
+    private static let mapTintPalette: [SampleTint] = [.teal, .coral, .sky, .amber]
 
     private enum MapRoute: Hashable {
         case manageCircles
@@ -24,76 +30,13 @@ struct MainMapView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ZStack(alignment: .top) {
-                MapCanvasView(
-                    members: members,
-                    selectedMemberID: selectedMember?.id,
-                    showsRoute: !selectedCircle.isTrip
-                ) { member in
-                    selectedMember = member
-                }
-                .ignoresSafeArea()
-
-                mapControls
-
-                VStack(spacing: 12) {
-                    topBar
-
-                    if isShowingSafeToast {
-                        SafeBroadcastToast(circleName: selectedCircle.name) {
-                            isShowingSafeReceipt = true
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-
-                    if selectedCircle.isTrip && isTripBannerVisible {
-                        TripEndingBanner(
-                            circleName: selectedCircle.name,
-                            onExtend: dismissTripBanner,
-                            onKeepPermanently: dismissTripBanner,
-                            onLetItEnd: dismissTripBanner
-                        )
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-
-                    if isSwitcherExpanded {
-                        CircleSwitcherMenu(
-                            circles: HarborPrivateFamilyLocationSample.circles,
-                            selectedCircleID: selectedCircleID,
-                            onSelect: select,
-                            onManage: {
-                                collapseSwitcher()
-                                path.append(.manageCircles)
-                            },
-                            onNewCircle: {
-                                collapseSwitcher()
-                                isShowingNewCircle = true
-                            }
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-
-                VStack(spacing: 14) {
-                    Spacer()
-
-                    SafeBroadcastButton(action: broadcastSafe)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.horizontal, 20)
-
-                    MemberStatusStripView(
-                        members: members,
-                        selectedMemberID: selectedMember?.id,
-                        onSelect: { selectedMember = $0 },
-                        onSelectAll: { selectedMember = nil }
-                    )
-                    .padding(.bottom, 96)
+            Group {
+                if circleService.circles.isEmpty {
+                    emptyState
+                } else {
+                    mapContent
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: MapRoute.self) { route in
                 switch route {
                 case .manageCircles:
@@ -103,12 +46,100 @@ struct MainMapView: View {
                 }
             }
         }
-        .sheet(item: $selectedMember) { member in
-            MemberStatusSheetView(member: member) {
-                selectedMember = nil
+        .task(id: circleService.selectedCircleID) {
+            liveLocations.observe(circleID: circleService.selectedCircleID)
+        }
+    }
+
+    @ViewBuilder
+    private var mapContent: some View {
+        ZStack(alignment: .top) {
+            MapCanvasView(
+                members: pinnedMembers,
+                selectedMemberID: selectedMemberID,
+                showsRoute: selectedCircle.map { !$0.isTrip } ?? true
+            ) { member in
+                selectedMemberID = member.id
             }
-            .presentationDetents([.medium, .large])
-            .presentationContentInteraction(.scrolls)
+            .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                topBar
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Color(.signalRed))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color(uiColor: .systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
+                if isShowingSafeToast, let selectedCircle {
+                    SafeBroadcastToast(circleName: selectedCircle.name) {
+                        isShowingSafeReceipt = true
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                if let selectedCircle, selectedCircle.isTrip, isTripBannerVisible, isEndingSoon {
+                    TripEndingBanner(
+                        circleName: selectedCircle.name,
+                        onExtend: { Task { await extendTrip() } },
+                        onKeepPermanently: { Task { await keepPermanently() } },
+                        onLetItEnd: dismissTripBanner
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                if isSwitcherExpanded {
+                    CircleSwitcherMenu(
+                        circles: mappedCircles,
+                        selectedCircleID: circleService.selectedCircleID ?? "",
+                        onSelect: { select($0.id) },
+                        onManage: {
+                            collapseSwitcher()
+                            path.append(.manageCircles)
+                        },
+                        onNewCircle: {
+                            collapseSwitcher()
+                            isShowingNewCircle = true
+                        }
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+
+            VStack(spacing: 14) {
+                Spacer()
+
+                SafeBroadcastButton(action: broadcastSafe)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, 20)
+                    .disabled(isSendingSafeBroadcast)
+
+                MemberStatusStripView(
+                    members: allMembers,
+                    selectedMemberID: selectedMemberID,
+                    onSelect: { selectedMemberID = $0.id },
+                    onSelectAll: { selectedMemberID = nil }
+                )
+                .padding(.bottom, 96)
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: sheetBinding) {
+            if let member = allMembers.first(where: { $0.id == selectedMemberID }) {
+                MemberStatusSheetView(member: member) {
+                    selectedMemberID = nil
+                }
+                .presentationDetents([.medium, .large])
+                .presentationContentInteraction(.scrolls)
+            }
         }
         .sheet(isPresented: $isShowingNewCircle) {
             NewCircleFlowView { isShowingNewCircle = false }
@@ -120,12 +151,141 @@ struct MainMapView: View {
         }
     }
 
-    private var selectedCircle: SampleCircle {
-        HarborPrivateFamilyLocationSample.circles.first { $0.id == selectedCircleID } ?? HarborPrivateFamilyLocationSample.circles[0]
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "person.3")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundStyle(Color(.calmTeal))
+            Text("No circles yet")
+                .font(.title3.bold())
+            Text("Create a family or trip circle, or join one with an invitation code, to see everyone on the map.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            PrimaryButton(title: "New circle") {
+                isShowingNewCircle = true
+            }
+            .padding(.horizontal, 60)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemGroupedBackground))
+        .sheet(isPresented: $isShowingNewCircle) {
+            NewCircleFlowView { isShowingNewCircle = false }
+        }
     }
 
-    private var members: [SampleMember] {
-        selectedCircle.isTrip ? HarborPrivateFamilyLocationSample.tripMembers : HarborPrivateFamilyLocationSample.members
+    private var sheetBinding: Binding<Bool> {
+        Binding(
+            get: { selectedMemberID != nil },
+            set: { if !$0 { selectedMemberID = nil } }
+        )
+    }
+
+    private var selectedCircle: SampleCircle? {
+        mappedCircles.first { $0.id == circleService.selectedCircleID }
+    }
+
+    /// Every real, non-owner-excluded member of the selected circle, merged with
+    /// their live RTDB location tick when one exists.
+    private var allMembers: [SampleMember] {
+        circleService.members.enumerated().map { index, member in
+            makeSampleMember(member, tint: Self.mapTintPalette[index % Self.mapTintPalette.count])
+        }
+    }
+
+    /// Only members who have actually published a coordinate — a pin needs
+    /// somewhere real to sit, unlike the status strip which can show "waiting".
+    private var pinnedMembers: [SampleMember] {
+        allMembers.filter { liveLocations.locationsByUserID[$0.id] != nil }
+    }
+
+    private var isEndingSoon: Bool {
+        guard let expiresAt = circleService.circles.first(where: { $0.id == circleService.selectedCircleID })?.expiresAt else {
+            return false
+        }
+        return expiresAt.timeIntervalSinceNow <= 24 * 60 * 60
+    }
+
+    private var mappedCircles: [SampleCircle] {
+        circleService.circles.enumerated().map { index, circle in
+            SampleCircle(
+                id: circle.id,
+                name: circle.name,
+                tint: Self.mapTintPalette[index % Self.mapTintPalette.count],
+                memberCount: circle.id == circleService.selectedCircleID ? circleService.members.count : nil,
+                isTrip: circle.kind == .trip,
+                durationText: durationText(for: circle),
+                memberInitials: [],
+                memberTints: []
+            )
+        }
+    }
+
+    private func durationText(for circle: FirebaseCircleSummary) -> String {
+        guard circle.kind == .trip else { return "permanent" }
+        guard let expiresAt = circle.expiresAt else { return "Trip circle" }
+        return "Ends \(expiresAt.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    private func makeSampleMember(_ member: FirebaseCircleMember, tint: SampleTint) -> SampleMember {
+        let live = liveLocations.locationsByUserID[member.id]
+        return SampleMember(
+            id: member.id,
+            name: member.displayName,
+            initials: initials(for: member.displayName),
+            tint: tint,
+            presence: presence(for: member, live: live),
+            place: member.sharingEnabled ? (live == nil ? "Waiting for location" : "Live") : "Sharing paused",
+            statusDetail: statusDetail(for: member, live: live),
+            batteryPercent: live?.batteryLevel,
+            speedText: speedText(for: live),
+            isDriving: (live?.speed ?? 0) > 3,
+            address: live.map { String(format: "%.4f, %.4f", $0.coordinate.latitude, $0.coordinate.longitude) }
+                ?? "No location shared yet",
+            lastUpdate: lastUpdateText(for: live),
+            accuracy: live?.horizontalAccuracy.map { "Within \(Int($0)) m" } ?? "Unknown",
+            sharing: member.sharingEnabled ? "Sharing now" : "Sharing paused",
+            coordinate: live?.coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
+        )
+    }
+
+    private func presence(for member: FirebaseCircleMember, live: LiveCircleLocationsService.LiveLocation?) -> SamplePresence {
+        guard member.sharingEnabled else { return .stopped }
+        guard let live else { return .stopped }
+        if let battery = live.batteryLevel, battery <= 20 { return .needsAttention }
+        let age = Date().timeIntervalSince(live.updatedAt)
+        if age <= 5 * 60 { return .upToDate }
+        if age <= 30 * 60 { return .needsAttention }
+        return .stopped
+    }
+
+    private func statusDetail(for member: FirebaseCircleMember, live: LiveCircleLocationsService.LiveLocation?) -> String {
+        guard member.sharingEnabled else { return "Sharing paused" }
+        guard live != nil else { return "Waiting for a location update" }
+        return lastUpdateText(for: live)
+    }
+
+    private func speedText(for live: LiveCircleLocationsService.LiveLocation?) -> String? {
+        guard let speed = live?.speed, speed > 1 else { return nil }
+        return String(format: "%.0f mph", speed * 2.23694)
+    }
+
+    private func initials(for name: String) -> String {
+        let letters = name.split(separator: " ").compactMap(\.first).prefix(2)
+        return letters.isEmpty ? "?" : String(letters).uppercased()
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    private func lastUpdateText(for live: LiveCircleLocationsService.LiveLocation?) -> String {
+        guard let live else { return "No updates yet" }
+        if Date().timeIntervalSince(live.updatedAt) < 30 { return "Live now" }
+        return Self.relativeFormatter.localizedString(for: live.updatedAt, relativeTo: Date())
     }
 
     private var topBar: some View {
@@ -138,8 +298,8 @@ struct MainMapView: View {
                     .frame(width: 42, height: 42)
                     .overlay { Circle().stroke(Color(.warmAmber), lineWidth: 2) }
                     .overlay {
-                        Text(HarborPrivateFamilyLocationSample.you.initials)
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Color(.warmAmber))
                     }
             }
@@ -148,9 +308,11 @@ struct MainMapView: View {
 
             Spacer(minLength: 0)
 
-            CircleSelectorPill(circle: selectedCircle, isExpanded: isSwitcherExpanded) {
-                withAnimation(.snappy(duration: 0.25)) {
-                    isSwitcherExpanded.toggle()
+            if let selectedCircle {
+                CircleSelectorPill(circle: selectedCircle, isExpanded: isSwitcherExpanded) {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        isSwitcherExpanded.toggle()
+                    }
                 }
             }
 
@@ -172,37 +334,12 @@ struct MainMapView: View {
         }
     }
 
-    private var mapControls: some View {
-        VStack(spacing: 10) {
-            mapControl("location.viewfinder")
-            mapControl("location.north.fill")
-            mapControl("square.3.layers.3d")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-        .padding(.trailing, 16)
-        .padding(.top, 96)
-        .allowsHitTesting(true)
-    }
-
-    private func mapControl(_ symbol: String) -> some View {
-        Button { } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.primary)
-                .frame(width: 42, height: 42)
-                .background(Color(uiColor: .systemBackground))
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.1), radius: 10, y: 3)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func select(_ circle: SampleCircle) {
+    private func select(_ circleID: String) {
         withAnimation(.snappy(duration: 0.25)) {
-            selectedCircleID = circle.id
+            circleService.selectCircle(circleID)
             isSwitcherExpanded = false
             isTripBannerVisible = true
-            selectedMember = nil
+            selectedMemberID = nil
         }
     }
 
@@ -219,9 +356,44 @@ struct MainMapView: View {
     }
 
     private func broadcastSafe() {
-        withAnimation(.snappy(duration: 0.3)) {
-            isSwitcherExpanded = false
-            isShowingSafeToast = true
+        guard let circleID = circleService.selectedCircleID else { return }
+        isSendingSafeBroadcast = true
+        Task {
+            defer { isSendingSafeBroadcast = false }
+            do {
+                try await circleService.sendSafeBroadcast(circleID: circleID)
+                withAnimation(.snappy(duration: 0.3)) {
+                    isSwitcherExpanded = false
+                    isShowingSafeToast = true
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func extendTrip() async {
+        guard let circleID = circleService.selectedCircleID,
+              let currentExpiry = circleService.circles.first(where: { $0.id == circleID })?.expiresAt else { return }
+        isUpdatingTrip = true
+        defer { isUpdatingTrip = false }
+        do {
+            try await circleService.extendTrip(circleID: circleID, newExpiresAt: currentExpiry.addingTimeInterval(3 * 24 * 60 * 60))
+            dismissTripBanner()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func keepPermanently() async {
+        guard let circleID = circleService.selectedCircleID else { return }
+        isUpdatingTrip = true
+        defer { isUpdatingTrip = false }
+        do {
+            try await circleService.keepCirclePermanently(circleID: circleID)
+            dismissTripBanner()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

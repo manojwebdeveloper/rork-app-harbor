@@ -13,6 +13,7 @@ struct OnboardingFlowView: View {
     }
 
     @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var locationService: LocationService
 
     let onFinished: () -> Void
 
@@ -60,7 +61,10 @@ struct OnboardingFlowView: View {
 
         case .locationPermission:
             LocationPermissionEducationView(
-                onContinue: { path.append(.notificationPermission) },
+                onContinue: {
+                    locationService.requestWhenInUseAuthorization()
+                    path.append(.notificationPermission)
+                },
                 onSkip: { path.append(.notificationPermission) }
             )
             .navigationBarBackButtonHidden()

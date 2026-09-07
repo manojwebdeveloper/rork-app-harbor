@@ -12,6 +12,8 @@
 		XXADF9F31A1F49D32FAA9BXX /* HarborPrivateFamilyLocationWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = XXD7D0594A489D84DBD158XX /* HarborPrivateFamilyLocationWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		XXD1DC06F72E668EB508A0XX /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = XXA68B84F62131B3E4DD06XX /* FirebaseFunctions */; };
 		XXF20D2CDEAE5B8CC3E9B9XX /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = XXA7CEE2E714B4134314D1XX /* FirebaseAuth */; };
+		XXDB9E2C7A1F4B6D08359CXX /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = XXDB4A1F6C9E2B7D0538A4XX /* FirebaseDatabase */; };
+		XXFCM3A8D6E1B4C9F02571XX /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = XXFCM7B2E9A4D1C6F0538BXX /* FirebaseMessaging */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,6 +116,8 @@
 				XXF20D2CDEAE5B8CC3E9B9XX /* FirebaseAuth in Frameworks */,
 				XX2262CF2F916B23225CA5XX /* FirebaseFirestore in Frameworks */,
 				XXD1DC06F72E668EB508A0XX /* FirebaseFunctions in Frameworks */,
+				XXDB9E2C7A1F4B6D08359CXX /* FirebaseDatabase in Frameworks */,
+				XXFCM3A8D6E1B4C9F02571XX /* FirebaseMessaging in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -189,6 +193,8 @@
 				XXA7CEE2E714B4134314D1XX /* FirebaseAuth */,
 				XXC8CA15065452004DE11FXX /* FirebaseFirestore */,
 				XXA68B84F62131B3E4DD06XX /* FirebaseFunctions */,
+				XXDB4A1F6C9E2B7D0538A4XX /* FirebaseDatabase */,
+				XXFCM7B2E9A4D1C6F0538BXX /* FirebaseMessaging */,
 			);
 			productName = HarborPrivateFamilyLocation;
 			productReference = 105FC57A2E9EAD3100EA8BCF /* HarborPrivateFamilyLocation.app */;
@@ -797,6 +803,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = XX14CD308252DEBD227779XX /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		XXDB4A1F6C9E2B7D0538A4XX /* FirebaseDatabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = XX14CD308252DEBD227779XX /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseDatabase;
+		};
+		XXFCM7B2E9A4D1C6F0538BXX /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = XX14CD308252DEBD227779XX /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
