@@ -2,14 +2,21 @@ import {randomInt} from "node:crypto";
 import {initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {DocumentReference, FieldValue, Timestamp, getFirestore} from "firebase-admin/firestore";
+import {getDatabase} from "firebase-admin/database";
+import {getMessaging} from "firebase-admin/messaging";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
+import {logger} from "firebase-functions";
 
 initializeApp();
 
 const db = getFirestore();
+const rtdb = getDatabase();
+const messaging = getMessaging();
 const region = "europe-west2";
 const invitationLifetimeMs = 24 * 60 * 60 * 1000;
 const maximumTripLengthMs = 90 * 24 * 60 * 60 * 1000;
+const minimumTripExtensionMs = 60 * 60 * 1000;
 
 type JsonObject = Record<string, unknown>;
 type CircleRole = "owner" | "admin" | "member";
@@ -68,6 +75,69 @@ async function circleAndRole(circleId: string, uid: string, acceptedRoles: Circl
   return {circleRef, circle: objectData(circleSnapshot.data()), role};
 }
 
+// RTDB cannot read Firestore, so circle membership is mirrored into a small
+// `circleMembers` tree there purely so its security rules can authorise live
+// location reads/writes without a second round trip. Firestore stays the
+// source of truth; a mirror failure is logged but never fails the caller's
+// Firestore-side request, which already succeeded.
+async function setMembershipMirror(circleId: string, uid: string, isMember: boolean): Promise<void> {
+  try {
+    if (isMember) {
+      await rtdb.ref(`circleMembers/${circleId}/${uid}`).set(true);
+    } else {
+      await Promise.all([
+        rtdb.ref(`circleMembers/${circleId}/${uid}`).remove(),
+        // Leaving revokes location sharing immediately, not at the next write.
+        rtdb.ref(`locations/${circleId}/${uid}`).remove(),
+      ]);
+    }
+  } catch (error) {
+    logger.error(`Failed to update RTDB membership mirror for circle ${circleId}, uid ${uid}`, error);
+  }
+}
+
+async function removeCircleFromRealtimeDatabase(circleId: string): Promise<void> {
+  try {
+    await Promise.all([
+      rtdb.ref(`circleMembers/${circleId}`).remove(),
+      rtdb.ref(`locations/${circleId}`).remove(),
+    ]);
+  } catch (error) {
+    logger.error(`Failed to remove RTDB nodes for circle ${circleId}`, error);
+  }
+}
+
+async function sendToMembers(circleId: string, excludeUid: string | null, notification: {title: string; body: string}, data: Record<string, string>): Promise<void> {
+  const members = await db.collection("circles").doc(circleId).collection("members").get();
+  const recipientIds = members.docs
+    .map((member) => member.get("userId") as string | undefined)
+    .filter((userId): userId is string => Boolean(userId) && userId !== excludeUid);
+  if (recipientIds.length === 0) return;
+
+  const userDocs = await db.getAll(...recipientIds.map((userId) => db.collection("users").doc(userId)));
+  const tokens = userDocs.flatMap((snapshot) => {
+    const value = snapshot.get("fcmTokens");
+    return Array.isArray(value) ? (value as string[]) : [];
+  });
+  if (tokens.length === 0) return;
+
+  try {
+    const response = await messaging.sendEachForMulticast({tokens, notification, data});
+    const staleTokens = response.responses
+      .map((result, index) => (result.success ? null : tokens[index]))
+      .filter((token): token is string => Boolean(token));
+    if (staleTokens.length > 0) {
+      await Promise.all(
+        userDocs
+          .filter((snapshot) => Array.isArray(snapshot.get("fcmTokens")))
+          .map((snapshot) => snapshot.ref.update({fcmTokens: FieldValue.arrayRemove(...staleTokens)}))
+      );
+    }
+  } catch (error) {
+    logger.error(`Failed to send push notification for circle ${circleId}`, error);
+  }
+}
+
 async function deleteCircleData(circleId: string): Promise<void> {
   const circleRef = db.collection("circles").doc(circleId);
   const [members, invitations] = await Promise.all([
@@ -83,6 +153,7 @@ async function deleteCircleData(circleId: string): Promise<void> {
   for (const invitation of invitations.docs) deletions.push(invitation.ref.delete());
   await Promise.all(deletions);
   await circleRef.delete();
+  await removeCircleFromRealtimeDatabase(circleId);
 }
 
 function ensureInvitationUsable(invitation: JsonObject): void {
@@ -128,6 +199,7 @@ export const createCircle = onCall({region, enforceAppCheck: false}, async (requ
   batch.set(circleIndexRef, {circleId: circleRef.id, name, kind, role: "owner", expiresAt, joinedAt: FieldValue.serverTimestamp()});
   batch.set(userRef, {uid, displayName, email, updatedAt: FieldValue.serverTimestamp()}, {merge: true});
   await batch.commit();
+  await setMembershipMirror(circleRef.id, uid, true);
   return {circleId: circleRef.id};
 });
 
@@ -175,7 +247,7 @@ export const acceptInvitation = onCall({region, enforceAppCheck: false}, async (
   const invitationRef = db.collection("invitations").doc(code);
   const displayName = tokenString(request.auth?.token as JsonObject | undefined, "name");
 
-  return db.runTransaction(async (transaction) => {
+  const result = await db.runTransaction(async (transaction) => {
     const invitationSnapshot = await transaction.get(invitationRef);
     if (!invitationSnapshot.exists) throw new HttpsError("not-found", "Invitation not found.");
     const invitation = objectData(invitationSnapshot.data());
@@ -196,6 +268,9 @@ export const acceptInvitation = onCall({region, enforceAppCheck: false}, async (
     }
     return {circleId, alreadyMember: memberSnapshot.exists};
   });
+
+  if (!result.alreadyMember) await setMembershipMirror(result.circleId, uid, true);
+  return result;
 });
 
 export const revokeInvitation = onCall({region, enforceAppCheck: false}, async (request) => {
@@ -218,6 +293,7 @@ export const leaveCircle = onCall({region, enforceAppCheck: false}, async (reque
   const {circleRef, role} = await circleAndRole(circleId, uid, ["owner", "admin", "member"]);
   if (role === "owner") throw new HttpsError("failed-precondition", "The owner must delete the circle instead of leaving it.");
   await Promise.all([circleRef.collection("members").doc(uid).delete(), db.collection("users").doc(uid).collection("circleRefs").doc(circleId).delete()]);
+  await setMembershipMirror(circleId, uid, false);
   return {left: true};
 });
 
@@ -236,7 +312,10 @@ export const deleteAccount = onCall({region, enforceAppCheck: false}, async (req
   const memberships = await db.collectionGroup("members").where("userId", "==", uid).get();
   for (const membership of memberships.docs) {
     const circleRef = membership.ref.parent.parent;
-    if (circleRef) await Promise.all([membership.ref.delete(), db.collection("users").doc(uid).collection("circleRefs").doc(circleRef.id).delete()]);
+    if (circleRef) {
+      await Promise.all([membership.ref.delete(), db.collection("users").doc(uid).collection("circleRefs").doc(circleRef.id).delete()]);
+      await setMembershipMirror(circleRef.id, uid, false);
+    }
   }
   const [createdInvitations, circleRefs] = await Promise.all([
     db.collection("invitations").where("createdBy", "==", uid).get(),
@@ -246,4 +325,213 @@ export const deleteAccount = onCall({region, enforceAppCheck: false}, async (req
   await db.collection("users").doc(uid).delete();
   await getAuth().deleteUser(uid);
   return {deleted: true};
+});
+
+export const updateCircleExpiry = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const data = objectData(request.data);
+  const circleId = requiredString(data, "circleId", 128);
+  const action = requiredString(data, "action", 20);
+  if (action !== "extend" && action !== "keepPermanently") {
+    throw new HttpsError("invalid-argument", "action must be extend or keepPermanently.");
+  }
+  const {circleRef, circle} = await circleAndRole(circleId, uid, ["owner", "admin"]);
+  if (circle.kind !== "trip") throw new HttpsError("failed-precondition", "Only Trip Circles have an expiry to change.");
+
+  if (action === "keepPermanently") {
+    await circleRef.update({kind: "family", expiresAt: null, updatedAt: FieldValue.serverTimestamp()});
+    return {kind: "family", expiresAtMs: null};
+  }
+
+  const requestedExpiryMs = optionalNumber(data, "expiresAtMs");
+  if (!requestedExpiryMs || requestedExpiryMs <= Date.now() + minimumTripExtensionMs) {
+    throw new HttpsError("invalid-argument", "The new end time must be at least one hour from now.");
+  }
+  if (requestedExpiryMs > Date.now() + maximumTripLengthMs) {
+    throw new HttpsError("invalid-argument", "Trip Circles can last up to 90 days.");
+  }
+  await circleRef.update({expiresAt: Timestamp.fromMillis(requestedExpiryMs), updatedAt: FieldValue.serverTimestamp()});
+  return {kind: "trip", expiresAtMs: requestedExpiryMs};
+});
+
+export const registerPushToken = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const token = requiredString(objectData(request.data), "token", 4096);
+  await db.collection("users").doc(uid).set({fcmTokens: FieldValue.arrayUnion(token)}, {merge: true});
+  return {registered: true};
+});
+
+export const unregisterPushToken = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const token = requiredString(objectData(request.data), "token", 4096);
+  await db.collection("users").doc(uid).set({fcmTokens: FieldValue.arrayRemove(token)}, {merge: true});
+  return {unregistered: true};
+});
+
+export const updateDigestPreferences = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const data = objectData(request.data);
+  const enabled = data.enabled;
+  if (typeof enabled !== "boolean") throw new HttpsError("invalid-argument", "enabled must be a boolean.");
+  const dayOfWeek = optionalNumber(data, "dayOfWeek");
+  const hourUTC = optionalNumber(data, "hourUTC");
+  if (dayOfWeek !== undefined && (dayOfWeek < 0 || dayOfWeek > 6)) {
+    throw new HttpsError("invalid-argument", "dayOfWeek must be between 0 (Sunday) and 6 (Saturday).");
+  }
+  if (hourUTC !== undefined && (hourUTC < 0 || hourUTC > 23)) {
+    throw new HttpsError("invalid-argument", "hourUTC must be between 0 and 23.");
+  }
+  await db.collection("users").doc(uid).set({
+    digestPreferences: {
+      enabled,
+      dayOfWeek: dayOfWeek ?? 0,
+      hourUTC: hourUTC ?? 9,
+    },
+  }, {merge: true});
+  return {updated: true};
+});
+
+// "I'm Safe" never carries a coordinate — only the fact that the sender chose
+// to broadcast it, matching the no-coordinates-in-notifications constraint.
+export const sendSafeBroadcast = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const circleId = requiredString(objectData(request.data), "circleId", 128);
+  const {circle} = await circleAndRole(circleId, uid, ["owner", "admin", "member"]);
+  const displayName = tokenString(request.auth?.token as JsonObject | undefined, "name") || "A circle member";
+  const circleName = requiredString(circle, "name", 60);
+
+  await db.collection("circles").doc(circleId).collection("activity").add({
+    kind: "safe",
+    memberId: uid,
+    title: `${displayName} is safe`,
+    detail: `Sent to ${circleName} · no location shared`,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  await sendToMembers(
+    circleId,
+    uid,
+    {title: circleName, body: `${displayName} let the circle know they're safe.`},
+    {type: "safe", circleId}
+  );
+
+  return {sent: true};
+});
+
+// Runs hourly: Trip Circles end themselves, revoking location sharing immediately
+// rather than leaving a stale "live" position visible after the trip is over.
+export const expireTravelCircles = onSchedule({region, schedule: "0 * * * *", timeZone: "Etc/UTC"}, async () => {
+  const now = Timestamp.now();
+  const expired = await db.collection("circles")
+    .where("kind", "==", "trip")
+    .where("status", "==", "active")
+    .where("expiresAt", "<=", now)
+    .get();
+
+  for (const circleDoc of expired.docs) {
+    const circleId = circleDoc.id;
+    const circleName = requiredString(objectData(circleDoc.data()), "name", 60);
+    await circleDoc.ref.update({status: "expired", updatedAt: FieldValue.serverTimestamp()});
+    await db.collection("circles").doc(circleId).collection("activity").add({
+      kind: "system",
+      memberId: null,
+      title: `${circleName} has ended`,
+      detail: "This Trip Circle's location sharing has stopped.",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    await removeCircleFromRealtimeDatabase(circleId);
+    await sendToMembers(
+      circleId,
+      null,
+      {title: circleName, body: "This trip has ended and location sharing has stopped."},
+      {type: "tripEnded", circleId}
+    );
+  }
+});
+
+// Runs weekly. Per-user delivery-time preferences (see updateDigestPreferences)
+// are stored for a future per-user send scheduler; today every active circle's
+// digest is computed and pushed at the same fixed weekly run.
+export const generateWeeklyDigests = onSchedule({region, schedule: "5 0 * * 1", timeZone: "Etc/UTC"}, async () => {
+  const weekEnd = Timestamp.now();
+  const weekStart = Timestamp.fromMillis(weekEnd.toMillis() - 7 * 24 * 60 * 60 * 1000);
+  const weekId = weekEnd.toDate().toISOString().slice(0, 10);
+
+  const circles = await db.collection("circles").where("status", "==", "active").get();
+
+  for (const circleDoc of circles.docs) {
+    const circleId = circleDoc.id;
+    const [members, checkIns, activity] = await Promise.all([
+      db.collection("circles").doc(circleId).collection("members").get(),
+      db.collection("circles").doc(circleId).collection("checkIns").where("sentAt", ">=", weekStart).get(),
+      db.collection("circles").doc(circleId).collection("activity").where("createdAt", ">=", weekStart).get(),
+    ]);
+    if (members.empty) continue;
+
+    type MemberStats = {checkIns: number; places: Set<string>; alerts: number};
+    const statsByMember = new Map<string, MemberStats>();
+    for (const member of members.docs) {
+      statsByMember.set(member.id, {checkIns: 0, places: new Set(), alerts: 0});
+    }
+
+    for (const checkIn of checkIns.docs) {
+      const userId = checkIn.get("userId") as string | undefined;
+      const stats = userId ? statsByMember.get(userId) : undefined;
+      if (stats) stats.checkIns += 1;
+    }
+
+    for (const entry of activity.docs) {
+      const data = objectData(entry.data());
+      const memberId = typeof data.memberId === "string" ? data.memberId : undefined;
+      const stats = memberId ? statsByMember.get(memberId) : undefined;
+      if (!stats) continue;
+      if (data.kind === "arrival" || data.kind === "departure") {
+        const placeName = typeof data.placeName === "string" ? data.placeName : undefined;
+        if (placeName) stats.places.add(placeName);
+      } else if (data.kind === "lowBattery") {
+        stats.alerts += 1;
+      }
+    }
+
+    const memberSummaries = Array.from(statsByMember.entries()).map(([userId, stats]) => ({
+      userId,
+      checkIns: stats.checkIns,
+      places: stats.places.size,
+      placeNames: Array.from(stats.places),
+      alerts: stats.alerts,
+    }));
+
+    await db.collection("circles").doc(circleId).collection("digests").doc(weekId).set({
+      weekStart,
+      weekEnd,
+      memberSummaries,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    const recipientIds = members.docs
+      .map((member) => member.get("userId") as string | undefined)
+      .filter((userId): userId is string => Boolean(userId));
+    if (recipientIds.length === 0) continue;
+    const userDocs = await db.getAll(...recipientIds.map((userId) => db.collection("users").doc(userId)));
+    const enabledTokens = userDocs.flatMap((snapshot) => {
+      const preferences = objectData(snapshot.get("digestPreferences"));
+      if (preferences.enabled === false) return [];
+      const tokens = snapshot.get("fcmTokens");
+      return Array.isArray(tokens) ? (tokens as string[]) : [];
+    });
+    if (enabledTokens.length === 0) continue;
+
+    try {
+      await messaging.sendEachForMulticast({
+        tokens: enabledTokens,
+        notification: {
+          title: "Your weekly digest is ready",
+          body: `See what happened this week in ${requiredString(objectData(circleDoc.data()), "name", 60)}.`,
+        },
+        data: {type: "weeklyDigest", circleId},
+      });
+    } catch (error) {
+      logger.error(`Failed to send weekly digest push for circle ${circleId}`, error);
+    }
+  }
 });

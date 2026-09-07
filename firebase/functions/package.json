@@ -7,8 +7,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "serve": "npm run build && firebase emulators:start --only functions,firestore,auth",
-    "deploy": "firebase deploy --only functions,firestore:rules,firestore:indexes",
+    "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,database",
+    "deploy": "firebase deploy --only functions,firestore:rules,firestore:indexes,database",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

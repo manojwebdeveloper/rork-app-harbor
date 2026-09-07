@@ -15,6 +15,10 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/circles/$(circleId)/members/$(request.auth.uid));
     }
 
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
     match /users/{userId} {
       allow read, create, update: if isSelf(userId);
       allow delete: if false;
@@ -30,6 +34,46 @@ service cloud.firestore {
       allow write: if false;
 
       match /members/{memberId} {
+        allow read: if isCircleMember(circleId);
+        allow create, delete: if false;
+        // A member may only flip their own sharing toggle — everything else about
+        // membership (role, joining, leaving) stays behind the callable functions.
+        allow update: if isSelf(memberId) && onlyChanged(['sharingEnabled', 'updatedAt']);
+      }
+
+      // Saved places are visible to, and manageable by, any member of the circle —
+      // there is no per-member ownership split, the same as the design's "shared
+      // places" model.
+      match /places/{placeId} {
+        allow read: if isCircleMember(circleId);
+        allow create: if isCircleMember(circleId) &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update, delete: if isCircleMember(circleId);
+
+        match /alertRules/{ruleId} {
+          allow read: if isCircleMember(circleId);
+          allow create: if isCircleMember(circleId) &&
+            request.resource.data.createdBy == request.auth.uid;
+          allow update, delete: if isCircleMember(circleId);
+        }
+      }
+
+      // Check-ins are authored by the sender only, and immutable once sent.
+      match /checkIns/{checkInId} {
+        allow read: if isCircleMember(circleId);
+        allow create: if isCircleMember(circleId) &&
+          request.resource.data.userId == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      // Server-generated feed entries (safe broadcasts, system notices, scheduled
+      // digest summaries). Members read only; every write is admin-authored.
+      match /activity/{entryId} {
+        allow read: if isCircleMember(circleId);
+        allow write: if false;
+      }
+
+      match /digests/{digestId} {
         allow read: if isCircleMember(circleId);
         allow write: if false;
       }

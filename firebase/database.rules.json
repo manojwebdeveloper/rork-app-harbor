@@ -1,0 +1,32 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "circleMembers": {
+      "$circleId": {
+        ".read": "auth != null && data.child(auth.uid).exists()",
+        ".write": false
+      }
+    },
+
+    "locations": {
+      "$circleId": {
+        ".read": "auth != null && root.child('circleMembers').child($circleId).child(auth.uid).exists()",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && root.child('circleMembers').child($circleId).child(auth.uid).exists()",
+          ".validate": "newData.hasChildren(['lat', 'lng', 'updatedAt']) && newData.child('lat').isNumber() && newData.child('lat').val() >= -90 && newData.child('lat').val() <= 90 && newData.child('lng').isNumber() && newData.child('lng').val() >= -180 && newData.child('lng').val() <= 180",
+          "lat": { ".validate": "newData.isNumber()" },
+          "lng": { ".validate": "newData.isNumber()" },
+          "heading": { ".validate": "newData.isNumber() || newData.val() == null" },
+          "speed": { ".validate": "newData.isNumber() || newData.val() == null" },
+          "horizontalAccuracy": { ".validate": "newData.isNumber() || newData.val() == null" },
+          "batteryLevel": { ".validate": "newData.isNumber() || newData.val() == null" },
+          "isCharging": { ".validate": "newData.isBoolean() || newData.val() == null" },
+          "updatedAt": { ".validate": "newData.val() === now" },
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+}
