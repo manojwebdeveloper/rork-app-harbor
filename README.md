@@ -26,8 +26,8 @@ Push notifications, subscriptions and the real background location upload engine
 
 ## Repository structure
 
-- `ios/HarborFamilyLocation/` — SwiftUI application source
-- `ios/HarborFamilyLocation.xcodeproj` — the committed Xcode project Rork builds
+- `ios/HarborPrivateFamilyLocation/` — SwiftUI application source
+- `ios/HarborPrivateFamilyLocation.xcodeproj` — the committed Xcode project Rork builds
 - `ios/HarborWidget/` — home screen and Lock Screen widgets
 - `firebase/functions/` — trusted callable API
 - `firebase/firestore.rules` — client access policy
@@ -37,8 +37,8 @@ Push notifications, subscriptions and the real background location upload engine
 ## Local setup
 
 1. Follow `docs/firebase-testing-setup.md` to create Firebase and enable Sign in with Apple.
-2. Add `GoogleService-Info.plist` to `ios/HarborFamilyLocation/Resources/`.
-3. Open `ios/HarborFamilyLocation.xcodeproj` directly, or regenerate a standalone project:
+2. Add `GoogleService-Info.plist` to `ios/HarborPrivateFamilyLocation/Resources/`.
+3. Open `ios/HarborPrivateFamilyLocation.xcodeproj` directly, or regenerate a standalone project:
    `brew install xcodegen && xcodegen generate` from the repository root.
 4. Select the correct Apple development team and run on a physical iPhone.
 
