@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Placeholder people for the Harbor widgets.
-///
-/// The widget runs in its own process and cannot read the app's live data yet, so the
-/// Phase 2 layouts are populated from these static values. Colours are duplicated here
-/// because the app's asset catalog belongs to the app target.
+/// Sample people for the Harbor widgets' placeholder/redacted preview state
+/// (`HarborProvider.placeholder`) and as a fallback before the app has ever
+/// written a real snapshot (see `WidgetSnapshot.readLatest()`). Colours are
+/// duplicated here because the app's asset catalog belongs to the app target.
 nonisolated enum WidgetPalette {
     static let calmTeal = Color(red: 0.03, green: 0.50, blue: 0.47)
     static let clearSky = Color(red: 0.36, green: 0.55, blue: 0.94)
@@ -12,9 +11,20 @@ nonisolated enum WidgetPalette {
     static let warmAmber = Color(red: 0.91, green: 0.65, blue: 0.23)
     static let safeGreen = Color(red: 0.20, green: 0.66, blue: 0.45)
     static let slate = Color(red: 0.40, green: 0.45, blue: 0.49)
+
+    /// Matches `SampleTint.rawValue` from the app target ("sky", "teal", "coral", "amber").
+    static func tint(named name: String) -> Color {
+        switch name {
+        case "sky": clearSky
+        case "teal": calmTeal
+        case "coral": softCoral
+        case "amber": warmAmber
+        default: slate
+        }
+    }
 }
 
-nonisolated enum WidgetPresence {
+nonisolated enum WidgetPresence: String {
     case upToDate
     case needsAttention
     case stopped
@@ -122,7 +132,4 @@ nonisolated enum WidgetSample {
             isOffline: false
         )
     ]
-
-    static let lockSummary = "Everyone home · 2 min ago"
-    static let sharingCount = 3
 }

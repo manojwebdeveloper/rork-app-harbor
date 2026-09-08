@@ -687,6 +687,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HarborWidget/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = HarborWidget/HarborWidget.entitlements;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -709,6 +710,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HarborWidget/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = HarborWidget/HarborWidget.entitlements;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;

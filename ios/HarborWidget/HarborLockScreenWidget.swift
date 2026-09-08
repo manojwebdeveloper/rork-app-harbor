@@ -24,13 +24,13 @@ struct HarborLockScreenView: View {
     var body: some View {
         switch family {
         case .accessoryInline:
-            Label(WidgetSample.lockSummary, systemImage: "mappin.and.ellipse")
+            Label(lockSummary, systemImage: "mappin.and.ellipse")
 
         case .accessoryCircular:
             VStack(spacing: 1) {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 13, weight: .semibold))
-                Text("\(WidgetSample.sharingCount)")
+                Text("\(sharingCount)")
                     .font(.system(size: 15, weight: .bold))
             }
 
@@ -51,5 +51,16 @@ struct HarborLockScreenView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var sharingCount: Int {
+        entry.circle.filter { !$0.isOffline }.count
+    }
+
+    private var lockSummary: String {
+        let onlineCount = sharingCount
+        guard onlineCount > 0 else { return "No one sharing right now" }
+        let allHome = entry.circle.allSatisfy { $0.place == "Home" }
+        return allHome ? "Everyone home" : "\(onlineCount) sharing"
     }
 }

@@ -13,6 +13,15 @@ nonisolated struct HarborEntry: TimelineEntry {
         circle: WidgetSample.circle,
         circleName: WidgetSample.circleName
     )
+
+    /// The app has no "pin a person" setting, so the small widget's single
+    /// member is just the first one in the circle — a reasonable default,
+    /// not a deliberate choice of who matters most.
+    static func from(_ snapshot: WidgetSnapshot) -> HarborEntry? {
+        guard !snapshot.members.isEmpty else { return nil }
+        let members = snapshot.members.map(snapshot.widgetMember)
+        return HarborEntry(date: snapshot.updatedAt, member: members[0], circle: members, circleName: snapshot.circleName)
+    }
 }
 
 nonisolated struct HarborProvider: TimelineProvider {
@@ -21,11 +30,15 @@ nonisolated struct HarborProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (HarborEntry) -> Void) {
-        completion(HarborEntry.sample)
+        completion(WidgetSnapshot.readLatest().flatMap(HarborEntry.from) ?? HarborEntry.sample)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<HarborEntry>) -> Void) {
-        completion(Timeline(entries: [HarborEntry.sample], policy: .never))
+        let entry = WidgetSnapshot.readLatest().flatMap(HarborEntry.from) ?? HarborEntry.sample
+        // The app reloads timelines itself whenever it writes a fresher
+        // snapshot (see WidgetSnapshotWriter), so this entry doesn't need to
+        // expire on its own — .never, not a fixed refresh interval.
+        completion(Timeline(entries: [entry], policy: .never))
     }
 }
 
