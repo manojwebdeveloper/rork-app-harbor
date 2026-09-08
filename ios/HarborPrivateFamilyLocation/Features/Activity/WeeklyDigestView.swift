@@ -1,31 +1,42 @@
 import SwiftUI
 
-/// Weekly digest summary. Layout only — every number is static placeholder data.
 struct WeeklyDigestView: View {
+    @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var activityService: ActivityService
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("\(HarborPrivateFamilyLocationSample.digestRange) · \(HarborPrivateFamilyLocationSample.digestCircleName)")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                if let digest = activityService.latestDigest {
+                    Text("\(dateRangeText(digest)) · \(circleService.selectedCircle?.name ?? "Your circle")")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
 
-                HStack(spacing: 10) {
-                    statTile(value: "\(HarborPrivateFamilyLocationSample.digestCheckIns)", label: "check-ins sent")
-                    statTile(value: "\(HarborPrivateFamilyLocationSample.digestPlaces)", label: "places visited")
-                    statTile(value: "\(HarborPrivateFamilyLocationSample.digestAlerts)", label: "alert · low battery")
-                }
-                .padding(.top, 14)
-
-                Text("BY MEMBER")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 26)
-                    .padding(.bottom, 12)
-
-                VStack(spacing: 14) {
-                    ForEach(HarborPrivateFamilyLocationSample.digestMembers) { member in
-                        memberCard(member)
+                    HStack(spacing: 10) {
+                        statTile(value: "\(totalCheckIns(digest))", label: "check-ins sent")
+                        statTile(value: "\(totalPlaces(digest))", label: "places visited")
+                        statTile(value: "\(totalAlerts(digest))", label: "Smart Alerts")
                     }
+                    .padding(.top, 14)
+
+                    Text("BY MEMBER")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 26)
+                        .padding(.bottom, 12)
+
+                    VStack(spacing: 14) {
+                        ForEach(digest.memberSummaries) { summary in
+                            memberCard(summary)
+                        }
+                    }
+                } else {
+                    ContentUnavailableView {
+                        Label("No digest yet", systemImage: "calendar")
+                    } description: {
+                        Text("Your first weekly digest appears after your circle's first full week together.")
+                    }
+                    .padding(.top, 40)
                 }
             }
             .padding(.horizontal, 20)
@@ -35,6 +46,32 @@ struct WeeklyDigestView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Your week")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func totalCheckIns(_ digest: DigestSummary) -> Int { digest.memberSummaries.reduce(0) { $0 + $1.checkIns } }
+    private func totalPlaces(_ digest: DigestSummary) -> Int { digest.memberSummaries.reduce(0) { $0 + $1.places } }
+    private func totalAlerts(_ digest: DigestSummary) -> Int { digest.memberSummaries.reduce(0) { $0 + $1.alerts } }
+
+    private func dateRangeText(_ digest: DigestSummary) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return "\(formatter.string(from: digest.weekStart)) – \(formatter.string(from: digest.weekEnd))"
+    }
+
+    private func memberName(_ userID: String) -> String {
+        circleService.members.first { $0.id == userID }?.displayName ?? "Circle member"
+    }
+
+    private func memberInitials(_ userID: String) -> String {
+        let name = memberName(userID)
+        let letters = name.split(separator: " ").compactMap(\.first).prefix(2)
+        return letters.isEmpty ? "?" : String(letters).uppercased()
+    }
+
+    private func memberTint(_ userID: String) -> Color {
+        let palette: [Color] = [Color(.clearSky), Color(.calmTeal), Color(.softCoral), Color(.warmAmber)]
+        guard let index = circleService.members.firstIndex(where: { $0.id == userID }) else { return Color(.calmTeal) }
+        return palette[index % palette.count]
     }
 
     private func statTile(value: String, label: String) -> some View {
@@ -56,39 +93,34 @@ struct WeeklyDigestView: View {
         }
     }
 
-    private func memberCard(_ member: SampleMemberDigest) -> some View {
+    private func memberCard(_ summary: DigestSummary.MemberSummary) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Circle()
-                    .fill(member.tint.color.opacity(0.16))
+                    .fill(memberTint(summary.userID).opacity(0.16))
                     .frame(width: 40, height: 40)
-                    .overlay { Circle().stroke(member.tint.color, lineWidth: 2) }
+                    .overlay { Circle().stroke(memberTint(summary.userID), lineWidth: 2) }
                     .overlay {
-                        Text(member.initials)
+                        Text(memberInitials(summary.userID))
                             .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(member.tint.color)
+                            .foregroundStyle(memberTint(summary.userID))
                     }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(member.name)
-                        .font(.system(size: 17, weight: .bold))
-                    Text(member.summary)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                }
+                Text(memberName(summary.userID))
+                    .font(.system(size: 17, weight: .bold))
 
                 Spacer(minLength: 0)
             }
 
             HStack(spacing: 10) {
-                miniStat(value: member.checkIns, label: "Check-ins")
-                miniStat(value: member.places, label: "Places")
-                miniStat(value: member.alerts, label: "Alerts")
+                miniStat(value: summary.checkIns, label: "Check-ins")
+                miniStat(value: summary.places, label: "Places")
+                miniStat(value: summary.alerts, label: "Alerts")
             }
 
-            if !member.placeNames.isEmpty {
+            if !summary.placeNames.isEmpty {
                 HStack(spacing: 8) {
-                    ForEach(member.placeNames, id: \.self) { place in
+                    ForEach(summary.placeNames, id: \.self) { place in
                         Text(place)
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)

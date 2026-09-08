@@ -1,22 +1,21 @@
 import SwiftUI
 
-/// Placeholder — step 3 of 5: name and category. Alerts move to the next step.
 struct AddPlaceDetailsView: View {
-    @Environment(\.dismiss) private var dismiss
+    let circleID: String
+    @State var draft: PlaceDraft
+    let onFinished: () -> Void
 
-    @State private var name = ""
-    @State private var category: Place.Category = .custom
     @State private var isShowingAlertsStep = false
 
     var body: some View {
         Form {
             Section {
-                TextField("e.g. Pool, Grandma's, Office", text: $name)
+                TextField("e.g. Pool, Grandma's, Office", text: $draft.name)
                     .textInputAutocapitalization(.words)
             }
 
             Section("Category") {
-                Picker("Category", selection: $category) {
+                Picker("Category", selection: $draft.category) {
                     ForEach(Place.Category.allCases) { category in
                         Text(category.rawValue).tag(category)
                     }
@@ -24,10 +23,11 @@ struct AddPlaceDetailsView: View {
                 .pickerStyle(.menu)
             }
 
-            Section {
-                Text("Saving places needs the location engine. This screen is layout only for now.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            if !draft.address.isEmpty {
+                Section("Address") {
+                    Text(draft.address)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Name this Place")
@@ -40,16 +40,17 @@ struct AddPlaceDetailsView: View {
             }
         }
         .navigationDestination(isPresented: $isShowingAlertsStep) {
-            PlaceAlertsStepView(
-                placeName: trimmedName.isEmpty ? "this place" : trimmedName,
-                placeAddress: "24 Willow Road"
-            ) {
-                dismiss()
-            }
+            PlaceAlertsStepView(circleID: circleID, draft: finalDraft, onFinished: onFinished)
         }
     }
 
     private var trimmedName: String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var finalDraft: PlaceDraft {
+        var copy = draft
+        copy.name = trimmedName.isEmpty ? "this place" : trimmedName
+        return copy
     }
 }

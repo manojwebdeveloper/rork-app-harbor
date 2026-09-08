@@ -1,17 +1,35 @@
+import MapKit
 import SwiftUI
 
-/// Placeholder — steps 2 and 3 of 4: confirm the pin, then size the alert area.
 struct AddPlacePositionRadiusView: View {
-    @State private var radiusMeters: Double = 150
+    let circleID: String
+    let onFinished: () -> Void
+
+    @State var draft: PlaceDraft
+    @State private var cameraPosition: MapCameraPosition
+
+    init(circleID: String, draft: PlaceDraft, onFinished: @escaping () -> Void) {
+        self.circleID = circleID
+        self._draft = State(initialValue: draft)
+        self.onFinished = onFinished
+        _cameraPosition = State(initialValue: .region(
+            MKCoordinateRegion(center: draft.coordinate, span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01))
+        ))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Rectangle()
-                    .fill(Color(.seaGlass).opacity(0.5))
+                Map(position: $cameraPosition) {
+                    MapCircle(center: draft.coordinate, radius: draft.radiusMeters)
+                        .foregroundStyle(Color(.calmTeal).opacity(0.16))
+                        .stroke(Color(.calmTeal), lineWidth: 1.5)
+                }
+
                 Image(systemName: "mappin.circle.fill")
                     .font(.system(size: 42))
                     .foregroundStyle(Color(.calmTeal))
+                    .shadow(radius: 2)
             }
             .frame(maxHeight: .infinity)
 
@@ -20,7 +38,7 @@ struct AddPlacePositionRadiusView: View {
                     Text("Alert area")
                         .font(.headline)
                     Spacer()
-                    Text("\(Int(radiusMeters)) meters")
+                    Text("\(Int(draft.radiusMeters)) meters")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color(.calmTeal))
                 }
@@ -29,11 +47,11 @@ struct AddPlacePositionRadiusView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Slider(value: $radiusMeters, in: 50...800, step: 25)
+                Slider(value: $draft.radiusMeters, in: 50...800, step: 25)
                     .tint(Color(.calmTeal))
 
                 NavigationLink("Next") {
-                    AddPlaceDetailsView()
+                    AddPlaceDetailsView(circleID: circleID, draft: draft, onFinished: onFinished)
                 }
                 .font(.headline)
                 .frame(maxWidth: .infinity)

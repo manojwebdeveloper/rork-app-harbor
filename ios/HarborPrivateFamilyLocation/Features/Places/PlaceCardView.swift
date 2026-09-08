@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Placeholder — layout only. One saved place row on the Places tab.
+/// One saved place row on the Places tab.
 struct PlaceCardView: View {
     let place: Place
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -21,14 +22,18 @@ struct PlaceCardView: View {
 
                 Spacer()
 
-                Image(systemName: "ellipsis")
-                    .foregroundStyle(.secondary)
+                Menu {
+                    Button("Delete place", systemImage: "trash", role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Divider()
 
             HStack {
-                Text("No one here right now")
+                Text("\(Int(place.radiusMeters)) m alert radius")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()

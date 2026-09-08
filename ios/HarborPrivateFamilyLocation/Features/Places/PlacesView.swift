@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// Placeholder — layout only. Saved places arrive with the location engine.
 struct PlacesView: View {
+    @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var placesService: PlacesService
+
     @State private var isAddingPlace = false
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -12,23 +15,28 @@ struct PlacesView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
-                    RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.card, style: .continuous)
-                        .fill(Color(.seaGlass).opacity(0.5))
-                        .frame(height: 96)
-                        .overlay {
-                            Image(systemName: "map")
-                                .font(.system(size: 26, weight: .semibold))
-                                .foregroundStyle(Color(.calmTeal))
-                        }
-
-                    ContentUnavailableView {
-                        Label("No places yet", systemImage: "mappin.and.ellipse")
-                    } description: {
-                        Text("Add a place to get arrival and departure updates for the people in your circle.")
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(Color(.signalRed))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 30)
-                    .harborCard()
+
+                    if placesService.places.isEmpty {
+                        ContentUnavailableView {
+                            Label("No places yet", systemImage: "mappin.and.ellipse")
+                        } description: {
+                            Text("Add a place to get arrival and departure updates for the people in your circle.")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 30)
+                        .harborCard()
+                    } else {
+                        ForEach(placesService.places) { place in
+                            PlaceCardView(place: place) {
+                                delete(place)
+                            }
+                        }
+                    }
 
                     Text("Places you save here are private to your circle.")
                         .font(.footnote)
@@ -46,12 +54,28 @@ struct PlacesView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .disabled(circleService.selectedCircleID == nil)
                 }
             }
             .sheet(isPresented: $isAddingPlace) {
-                NavigationStack {
-                    AddPlaceSearchView()
+                if let circleID = circleService.selectedCircleID {
+                    NavigationStack {
+                        AddPlaceSearchView(circleID: circleID) {
+                            isAddingPlace = false
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    private func delete(_ place: Place) {
+        guard let circleID = circleService.selectedCircleID else { return }
+        Task {
+            do {
+                try await placesService.deletePlace(circleID: circleID, placeID: place.id)
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }

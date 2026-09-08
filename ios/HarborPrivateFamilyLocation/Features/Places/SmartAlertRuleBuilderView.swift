@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// Sentence-style Smart Alert builder. Layout only — no rule is ever evaluated.
+/// Sentence-style Smart Alert builder. `person` options come from the real
+/// circle roster (plus "Anyone"/"Not everyone"); everything else is a fixed
+/// set of `SmartAlertRule` raw values so no translation layer is needed
+/// between this view's local state and Firestore.
 struct SmartAlertRuleBuilderView: View {
     private enum Field: String, Identifiable {
         case person
@@ -18,30 +21,44 @@ struct SmartAlertRuleBuilderView: View {
             case .time: "At what time?"
             }
         }
-
-        var options: [String] {
-            switch self {
-            case .person: ["Emily", "Maya", "James", "Anyone", "Not everyone"]
-            case .event: ["arrives", "leaves", "is still here", "is home"]
-            case .comparator: ["after", "before", "by"]
-            case .time: ["3:30 PM", "5:00 PM", "6:00 PM", "8:00 PM", "10:00 PM", "11:00 PM"]
-            }
-        }
     }
 
-    private static let frequencies = ["Every time", "Once a day", "Weekly summary"]
+    private static let eventOptions = SmartAlertRule.Event.allCases.map(\.rawValue)
+    private static let comparatorOptions = SmartAlertRule.Comparator.allCases.map(\.rawValue)
+    private static let timeOptions = ["3:30 PM", "5:00 PM", "6:00 PM", "8:00 PM", "10:00 PM", "11:00 PM"]
+    private static let frequencyOptions = SmartAlertRule.Frequency.allCases.map(\.rawValue)
     private static let dayLabels = ["S", "M", "T", "W", "T", "F", "S"]
 
+    let circleID: String
+    let placeID: String
     let placeName: String
+    let members: [FirebaseCircleMember]
     let onAdd: () -> Void
 
-    @State private var person = "Emily"
-    @State private var event = "arrives"
-    @State private var comparator = "after"
+    @EnvironmentObject private var placesService: PlacesService
+
+    @State private var person: String
+    @State private var event = SmartAlertRule.Event.arrives.rawValue
+    @State private var comparator = SmartAlertRule.Comparator.after.rawValue
     @State private var time = "6:00 PM"
-    @State private var frequency = "Every time"
+    @State private var frequency = SmartAlertRule.Frequency.everyTime.rawValue
     @State private var selectedDays: Set<Int> = [1, 2, 3, 4, 5]
     @State private var editingField: Field?
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(circleID: String, placeID: String, placeName: String, members: [FirebaseCircleMember], onAdd: @escaping () -> Void) {
+        self.circleID = circleID
+        self.placeID = placeID
+        self.placeName = placeName
+        self.members = members
+        self.onAdd = onAdd
+        _person = State(initialValue: members.first?.displayName ?? "Anyone")
+    }
+
+    private var personOptions: [String] {
+        members.map(\.displayName) + ["Anyone", "Not everyone"]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,14 +94,22 @@ struct SmartAlertRuleBuilderView: View {
 
                     dayPicker
                         .padding(.top, 10)
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(Color(.signalRed))
+                            .padding(.top, 14)
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 24)
             }
 
-            PrimaryButton(title: "Add Smart Alert", action: onAdd)
+            PrimaryButton(title: isSaving ? "Adding…" : "Add Smart Alert", action: save)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
+                .disabled(isSaving)
         }
         .background(Color(uiColor: .systemBackground))
         .navigationTitle("New Smart Alert")
@@ -92,7 +117,7 @@ struct SmartAlertRuleBuilderView: View {
         .sheet(item: $editingField) { field in
             SmartAlertOptionPicker(
                 title: field.title,
-                options: field.options,
+                options: options(for: field),
                 selection: value(for: field)
             ) { newValue in
                 apply(newValue, to: field)
@@ -160,7 +185,7 @@ struct SmartAlertRuleBuilderView: View {
 
     private var frequencyPicker: some View {
         HStack(spacing: 0) {
-            ForEach(Self.frequencies, id: \.self) { option in
+            ForEach(Self.frequencyOptions, id: \.self) { option in
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { frequency = option }
                 } label: {
@@ -235,6 +260,15 @@ struct SmartAlertRuleBuilderView: View {
         }
     }
 
+    private func options(for field: Field) -> [String] {
+        switch field {
+        case .person: personOptions
+        case .event: Self.eventOptions
+        case .comparator: Self.comparatorOptions
+        case .time: Self.timeOptions
+        }
+    }
+
     private func value(for field: Field) -> String {
         switch field {
         case .person: person
@@ -250,6 +284,48 @@ struct SmartAlertRuleBuilderView: View {
         case .event: event = newValue
         case .comparator: comparator = newValue
         case .time: time = newValue
+        }
+    }
+
+    private func save() {
+        guard let eventValue = SmartAlertRule.Event(rawValue: event),
+              let comparatorValue = SmartAlertRule.Comparator(rawValue: comparator),
+              let frequencyValue = SmartAlertRule.Frequency(rawValue: frequency),
+              let timeMinutes = SmartAlertRule.minutes(fromPickerTime: time) else {
+            errorMessage = "Something about this rule didn't parse. Try again."
+            return
+        }
+
+        let personID: String
+        if person == "Anyone" {
+            personID = SmartAlertRule.anyonePersonID
+        } else if person == "Not everyone" {
+            personID = SmartAlertRule.notEveryonePersonID
+        } else {
+            personID = members.first { $0.displayName == person }?.id ?? SmartAlertRule.anyonePersonID
+        }
+
+        isSaving = true
+        errorMessage = nil
+        Task {
+            do {
+                try await placesService.addAlertRule(
+                    circleID: circleID,
+                    placeID: placeID,
+                    personID: personID,
+                    personLabel: person,
+                    event: eventValue,
+                    comparator: comparatorValue,
+                    timeMinutes: timeMinutes,
+                    frequency: frequencyValue,
+                    days: selectedDays
+                )
+                isSaving = false
+                onAdd()
+            } catch {
+                isSaving = false
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }

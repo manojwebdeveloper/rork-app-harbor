@@ -1,14 +1,17 @@
 import SwiftUI
 
-/// Placeholder — layout only. Sending check-ins arrives with the backend pass.
 struct CheckInSheetView: View {
+    let circleID: String
+    let onSend: () -> Void
+
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var activityService: ActivityService
 
     @State private var message: CheckIn.Message = .safe
     @State private var customText = ""
     @State private var sharingWindow: CheckIn.SharingWindow? = .oneHour
-
-    let onSend: () -> Void
+    @State private var isSending = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -77,7 +80,14 @@ struct CheckInSheetView: View {
                     }
                 }
 
-                PrimaryButton(title: "Send check-in", action: onSend)
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Color(.signalRed))
+                }
+
+                PrimaryButton(title: isSending ? "Sending…" : "Send check-in", action: send)
+                    .disabled(isSending)
 
                 Button("Cancel") { dismiss() }
                     .font(.subheadline.weight(.semibold))
@@ -85,6 +95,26 @@ struct CheckInSheetView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .padding(20)
+        }
+    }
+
+    private func send() {
+        isSending = true
+        errorMessage = nil
+        Task {
+            do {
+                try await activityService.sendCheckIn(
+                    circleID: circleID,
+                    message: message,
+                    customText: customText,
+                    sharingWindow: sharingWindow
+                )
+                isSending = false
+                onSend()
+            } catch {
+                isSending = false
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }

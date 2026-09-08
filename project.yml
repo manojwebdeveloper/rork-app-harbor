@@ -37,6 +37,9 @@ targets:
       properties:
         com.apple.developer.applesignin:
           - Default
+        aps-environment: development
+        com.apple.security.application-groups:
+          - group.com.appamore.harbor
     info:
       path: ios/HarborPrivateFamilyLocation/Resources/Info.plist
       properties:
@@ -52,6 +55,7 @@ targets:
         NSLocationAlwaysAndWhenInUseUsageDescription: Harbor uses background location to keep an active sharing session updated after you leave the app.
         UIBackgroundModes:
           - location
+          - remote-notification
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.appamore.harbor

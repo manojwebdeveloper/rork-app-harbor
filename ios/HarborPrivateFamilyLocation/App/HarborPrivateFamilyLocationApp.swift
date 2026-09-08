@@ -5,10 +5,14 @@ import SwiftUI
 @main
 @MainActor
 struct HarborPrivateFamilyLocationApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState: AppState
     @StateObject private var authService: AuthService
     @StateObject private var circleService: CircleService
     @StateObject private var locationService: LocationService
+    @StateObject private var placesService: PlacesService
+    @StateObject private var activityService: ActivityService
+    @StateObject private var pushNotificationService: PushNotificationService
 
     init() {
         let firebaseConfigured = FirebaseBootstrap.configureIfPossible()
@@ -16,6 +20,9 @@ struct HarborPrivateFamilyLocationApp: App {
         _authService = StateObject(wrappedValue: AuthService(firebaseConfigured: firebaseConfigured))
         _circleService = StateObject(wrappedValue: CircleService(firebaseConfigured: firebaseConfigured))
         _locationService = StateObject(wrappedValue: LocationService(firebaseConfigured: firebaseConfigured))
+        _placesService = StateObject(wrappedValue: PlacesService(firebaseConfigured: firebaseConfigured))
+        _activityService = StateObject(wrappedValue: ActivityService(firebaseConfigured: firebaseConfigured))
+        _pushNotificationService = StateObject(wrappedValue: PushNotificationService(firebaseConfigured: firebaseConfigured))
     }
 
     var body: some Scene {
@@ -25,6 +32,9 @@ struct HarborPrivateFamilyLocationApp: App {
                 .environmentObject(authService)
                 .environmentObject(circleService)
                 .environmentObject(locationService)
+                .environmentObject(placesService)
+                .environmentObject(activityService)
+                .environmentObject(pushNotificationService)
                 .tint(Color(.calmTeal))
                 .onOpenURL { url in
                     if let code = InvitationLink.code(from: url) {
@@ -97,6 +107,9 @@ private struct RootView: View {
 
 private struct MainTabView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var placesService: PlacesService
+    @EnvironmentObject private var activityService: ActivityService
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -119,6 +132,10 @@ private struct MainTabView: View {
                 .padding(.bottom, 8)
         }
         .ignoresSafeArea(.keyboard)
+        .task(id: circleService.selectedCircleID) {
+            placesService.observePlaces(circleID: circleService.selectedCircleID)
+            activityService.observeCircle(circleID: circleService.selectedCircleID)
+        }
     }
 }
 

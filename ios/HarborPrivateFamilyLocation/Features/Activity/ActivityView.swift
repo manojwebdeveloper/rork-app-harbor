@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Activity tab — layout only. Entries come from static placeholder data.
 struct ActivityView: View {
+    @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var activityService: ActivityService
+
     @State private var isCheckingIn = false
     @State private var showingConfirmation = false
 
@@ -22,7 +24,13 @@ struct ActivityView: View {
                         .padding(.top, 24)
                         .padding(.bottom, 12)
 
-                    ActivityTimelineView(entries: HarborPrivateFamilyLocationSample.activityToday)
+                    if timelineEntries.isEmpty {
+                        Text("Nothing yet today.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ActivityTimelineView(entries: timelineEntries)
+                    }
 
                     Text("Activity is visible only to your circle")
                         .font(.footnote)
@@ -43,15 +51,18 @@ struct ActivityView: View {
                         Label("Check in", systemImage: "checkmark")
                             .font(.caption.weight(.semibold))
                     }
+                    .disabled(circleService.selectedCircleID == nil)
                 }
             }
             .sheet(isPresented: $isCheckingIn) {
-                CheckInSheetView {
-                    isCheckingIn = false
-                    showingConfirmation = true
+                if let circleID = circleService.selectedCircleID {
+                    CheckInSheetView(circleID: circleID) {
+                        isCheckingIn = false
+                        showingConfirmation = true
+                    }
+                    .presentationDetents([.medium, .large])
+                    .presentationContentInteraction(.scrolls)
                 }
-                .presentationDetents([.medium, .large])
-                .presentationContentInteraction(.scrolls)
             }
             .overlay {
                 if showingConfirmation {
@@ -61,6 +72,14 @@ struct ActivityView: View {
                 }
             }
         }
+    }
+
+    private var timelineEntries: [SampleActivityEntry] {
+        ActivityTimelineMapping.entries(
+            checkIns: activityService.checkIns,
+            serverActivity: activityService.serverActivity,
+            members: circleService.members
+        )
     }
 
     private var digestCard: some View {
@@ -78,7 +97,7 @@ struct ActivityView: View {
                 Text("Your week")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Color.primary)
-                Text("\(HarborPrivateFamilyLocationSample.digestRange) · \(HarborPrivateFamilyLocationSample.digestCheckIns) check-ins, \(HarborPrivateFamilyLocationSample.digestPlaces) places")
+                Text(digestSummaryText)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -96,5 +115,14 @@ struct ActivityView: View {
             RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.card, style: .continuous)
                 .stroke(Color(.mineralBorder).opacity(0.7), lineWidth: 0.5)
         }
+    }
+
+    private var digestSummaryText: String {
+        guard let digest = activityService.latestDigest else {
+            return "No digest yet — check back after your first week"
+        }
+        let totalCheckIns = digest.memberSummaries.reduce(0) { $0 + $1.checkIns }
+        let totalPlaces = digest.memberSummaries.reduce(0) { $0 + $1.places }
+        return "\(totalCheckIns) check-ins, \(totalPlaces) places"
     }
 }

@@ -1,23 +1,27 @@
 import SwiftUI
 
 /// Smart Alerts for one place: empty state, rule list and delete confirmation.
-/// Layout only — rules live in local state for the length of the session.
 struct SmartAlertsListView: View {
+    let circleID: String
+    let placeID: String
     let placeName: String
     let placeAddress: String
 
-    @State private var rules: [SampleSmartAlertRule]
-    @State private var isBuildingRule = false
-    @State private var rulePendingDeletion: SampleSmartAlertRule?
+    @EnvironmentObject private var placesService: PlacesService
+    @EnvironmentObject private var circleService: CircleService
 
-    init(
-        placeName: String,
-        placeAddress: String,
-        rules: [SampleSmartAlertRule] = HarborPrivateFamilyLocationSample.smartAlertRules
-    ) {
-        self.placeName = placeName
-        self.placeAddress = placeAddress
-        _rules = State(initialValue: rules)
+    @State private var isBuildingRule = false
+    @State private var rulePendingDeletion: SmartAlertRule?
+    @State private var errorMessage: String?
+
+    private static let ruleExamples = [
+        "Notify me if Emily arrives after 6:00 PM",
+        "Notify me if anyone leaves before 8:00 AM",
+        "Notify me if not everyone is home by 8:00 PM"
+    ]
+
+    private var rules: [SmartAlertRule] {
+        placesService.alertRulesByPlaceID[placeID] ?? []
     }
 
     var body: some View {
@@ -32,8 +36,12 @@ struct SmartAlertsListView: View {
         .navigationTitle("Smart Alerts")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isBuildingRule) {
-            SmartAlertRuleBuilderView(placeName: placeName) {
-                addRule()
+            SmartAlertRuleBuilderView(
+                circleID: circleID,
+                placeID: placeID,
+                placeName: placeName,
+                members: circleService.members
+            ) {
                 isBuildingRule = false
             }
         }
@@ -48,7 +56,10 @@ struct SmartAlertsListView: View {
             Button("Cancel", role: .cancel) { rulePendingDeletion = nil }
             Button("Delete", role: .destructive) { delete(rule) }
         } message: { _ in
-            Text("You’ll stop getting this notification. Arrival and departure alerts aren’t affected.")
+            Text("You'll stop getting this notification. Arrival and departure alerts aren't affected.")
+        }
+        .onAppear {
+            placesService.observeAlertRules(circleID: circleID, placeID: placeID)
         }
     }
 
@@ -82,7 +93,7 @@ struct SmartAlertsListView: View {
                 .padding(.top, 28)
 
             VStack(spacing: 10) {
-                ForEach(HarborPrivateFamilyLocationSample.ruleExamples, id: \.self) { example in
+                ForEach(Self.ruleExamples, id: \.self) { example in
                     Button {
                         isBuildingRule = true
                     } label: {
@@ -122,6 +133,12 @@ struct SmartAlertsListView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
 
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Color(.signalRed))
+                }
+
                 ForEach(rules) { rule in
                     ruleCard(rule)
                 }
@@ -132,7 +149,7 @@ struct SmartAlertsListView: View {
                     Image(systemName: "shield")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
-                    Text("Smart Alerts run on your phone against locations your circle already shares. They don’t add any new tracking, and the people named never see the rule.")
+                    Text("Smart Alerts run against locations your circle already shares. They don't add any new tracking, and the people named never see the rule.")
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -145,7 +162,7 @@ struct SmartAlertsListView: View {
         }
     }
 
-    private func ruleCard(_ rule: SampleSmartAlertRule) -> some View {
+    private func ruleCard(_ rule: SmartAlertRule) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 Text(rule.sentence)
@@ -160,7 +177,7 @@ struct SmartAlertsListView: View {
             }
 
             HStack(spacing: 8) {
-                Text(rule.frequency)
+                Text(rule.frequency.rawValue)
                 Text("·")
                 Text(dayText(for: rule))
 
@@ -221,49 +238,35 @@ struct SmartAlertsListView: View {
         .buttonStyle(.plain)
     }
 
-    private func dayText(for rule: SampleSmartAlertRule) -> String {
+    private func dayText(for rule: SmartAlertRule) -> String {
         if rule.days.count == 7 { return "Every day" }
         if rule.days == [1, 2, 3, 4, 5] { return "Weekdays" }
         return "\(rule.days.count) days"
     }
 
-    private func toggleBinding(for rule: SampleSmartAlertRule) -> Binding<Bool> {
+    private func toggleBinding(for rule: SmartAlertRule) -> Binding<Bool> {
         Binding(
-            get: { rules.first { $0.id == rule.id }?.isOn ?? false },
+            get: { rule.isOn },
             set: { newValue in
-                guard let index = rules.firstIndex(where: { $0.id == rule.id }) else { return }
-                let existing = rules[index]
-                rules[index] = SampleSmartAlertRule(
-                    id: existing.id,
-                    person: existing.person,
-                    event: existing.event,
-                    comparator: existing.comparator,
-                    time: existing.time,
-                    frequency: existing.frequency,
-                    days: existing.days,
-                    isOn: newValue
-                )
+                Task {
+                    do {
+                        try await placesService.setAlertRule(isOn: newValue, circleID: circleID, placeID: placeID, ruleID: rule.id)
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                }
             }
         )
     }
 
-    private func addRule() {
-        rules.append(
-            SampleSmartAlertRule(
-                id: UUID().uuidString,
-                person: "Emily",
-                event: "arrives",
-                comparator: "after",
-                time: "6:00 PM",
-                frequency: "Every time",
-                days: [1, 2, 3, 4, 5],
-                isOn: true
-            )
-        )
-    }
-
-    private func delete(_ rule: SampleSmartAlertRule) {
-        rules.removeAll { $0.id == rule.id }
+    private func delete(_ rule: SmartAlertRule) {
         rulePendingDeletion = nil
+        Task {
+            do {
+                try await placesService.deleteAlertRule(circleID: circleID, placeID: placeID, ruleID: rule.id)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }

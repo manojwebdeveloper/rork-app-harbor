@@ -1,17 +1,25 @@
 import SwiftUI
 
-/// Weekly digest preferences. Layout only — nothing is scheduled or persisted.
+/// Weekly digest preferences. Delivery day/time are stored for a future
+/// per-user delivery scheduler — `generateWeeklyDigests` currently runs on a
+/// single fixed weekly schedule for every circle (see the Cloud Function's
+/// doc comment), so changing this doesn't yet change exactly when the push
+/// arrives, only whether it's sent at all.
 struct WeeklyDigestSettingsView: View {
-    private static let deliveryOptions = [
-        "Sundays, 9:00 AM",
-        "Sundays, 6:00 PM",
-        "Mondays, 8:00 AM",
-        "Fridays, 6:00 PM"
+    private static let deliveryOptions: [(label: String, dayOfWeek: Int, hourUTC: Int)] = [
+        ("Sundays, 9:00 AM", 0, 9),
+        ("Sundays, 6:00 PM", 0, 18),
+        ("Mondays, 8:00 AM", 1, 8),
+        ("Fridays, 6:00 PM", 5, 18)
     ]
 
+    @EnvironmentObject private var activityService: ActivityService
+
     @State private var isDigestEnabled = true
-    @State private var delivery = "Sundays, 9:00 AM"
+    @State private var deliveryIndex = 0
     @State private var isShowingPreview = false
+    @State private var isSaving = false
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,12 +37,16 @@ struct WeeklyDigestSettingsView: View {
                     .tint(Color(.safeGreen))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
+                    .onChange(of: isDigestEnabled) { _, _ in save() }
 
                     Divider().padding(.leading, 16)
 
                     Menu {
-                        ForEach(Self.deliveryOptions, id: \.self) { option in
-                            Button(option) { delivery = option }
+                        ForEach(Array(Self.deliveryOptions.enumerated()), id: \.offset) { index, option in
+                            Button(option.label) {
+                                deliveryIndex = index
+                                save()
+                            }
                         }
                     } label: {
                         HStack {
@@ -44,7 +56,7 @@ struct WeeklyDigestSettingsView: View {
 
                             Spacer()
 
-                            Text(delivery)
+                            Text(Self.deliveryOptions[deliveryIndex].label)
                                 .font(.system(size: 16))
                                 .foregroundStyle(.secondary)
 
@@ -63,6 +75,12 @@ struct WeeklyDigestSettingsView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.field, style: .continuous)
                         .stroke(Color(.mineralBorder).opacity(0.7), lineWidth: 0.5)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Color(.signalRed))
                 }
 
                 Text("Everyone in the circle gets the same summary, so nobody is reported on behind their back.")
@@ -98,9 +116,27 @@ struct WeeklyDigestSettingsView: View {
         .navigationTitle("Weekly digest")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $isShowingPreview) {
-            DigestNotificationPreviewView(delivery: delivery) {
+            DigestNotificationPreviewView(delivery: Self.deliveryOptions[deliveryIndex].label) {
                 isShowingPreview = false
             }
+        }
+    }
+
+    private func save() {
+        let option = Self.deliveryOptions[deliveryIndex]
+        isSaving = true
+        errorMessage = nil
+        Task {
+            do {
+                try await activityService.updateDigestPreferences(
+                    enabled: isDigestEnabled,
+                    dayOfWeek: option.dayOfWeek,
+                    hourUTC: option.hourUTC
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSaving = false
         }
     }
 }

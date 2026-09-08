@@ -1,16 +1,20 @@
 import SwiftUI
 
-/// "As Maya sees it" — what the circle's Activity list looks like after a safe broadcast.
-/// Layout only, driven by static placeholder entries.
+/// What the circle's Activity list looks like right after a safe broadcast —
+/// shown to the sender as a receipt, built from the same real feed
+/// `ActivityView` shows everyone else.
 struct CircleActivityPreviewView: View {
     let onBackToMap: () -> Void
+
+    @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var activityService: ActivityService
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Activity")
                     .font(.system(size: 34, weight: .bold))
-                Text("As Maya sees it, on her phone")
+                Text("This is what your circle sees")
                     .font(.system(size: 15))
                     .foregroundStyle(.secondary)
             }
@@ -24,8 +28,12 @@ struct CircleActivityPreviewView: View {
                 .padding(.top, 22)
                 .padding(.bottom, 10)
 
-            ActivityTimelineView(entries: HarborPrivateFamilyLocationSample.activityAsCircleSeesIt)
-                .padding(.horizontal, 20)
+            ActivityTimelineView(entries: ActivityTimelineMapping.entries(
+                checkIns: activityService.checkIns,
+                serverActivity: activityService.serverActivity,
+                members: circleService.members
+            ))
+            .padding(.horizontal, 20)
 
             Spacer()
 
