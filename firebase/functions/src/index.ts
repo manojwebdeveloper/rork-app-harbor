@@ -6,6 +6,7 @@ import {getDatabase} from "firebase-admin/database";
 import {getMessaging} from "firebase-admin/messaging";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
+import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {logger} from "firebase-functions";
 
 initializeApp();
@@ -535,3 +536,114 @@ export const generateWeeklyDigests = onSchedule({region, schedule: "5 0 * * 1", 
     }
   }
 });
+
+function matchesRule(rule: JsonObject, memberId: string, localMinutes: number, localDayOfWeek: number): boolean {
+  const personId = rule.personId;
+  // "anyone" matches every member; a specific personId must match exactly.
+  // "not_everyone" (a completeness check across all members) and the "by"
+  // comparator (a negative "hasn't happened yet" check) both need a
+  // scheduled sweep rather than a single event to evaluate — not yet built,
+  // see the final report.
+  if (personId === "not_everyone") return false;
+  if (personId !== "anyone" && personId !== memberId) return false;
+
+  const days = Array.isArray(rule.days) ? (rule.days as unknown[]).filter((d): d is number => typeof d === "number") : [];
+  if (days.length > 0 && !days.includes(localDayOfWeek)) return false;
+
+  const ruleMinutes = typeof rule.timeMinutes === "number" ? rule.timeMinutes : null;
+  if (ruleMinutes === null) return false;
+  if (rule.comparator === "after") return localMinutes >= ruleMinutes;
+  if (rule.comparator === "before") return localMinutes <= ruleMinutes;
+  return false;
+}
+
+function ruleSentence(rule: JsonObject, memberName: string, placeName: string): string {
+  const verb = rule.event === "leaves" ? "left" : "arrived at";
+  return `${memberName} ${verb} ${placeName}`;
+}
+
+// Triggered by the member's own device reporting a geofence crossing (see
+// firestore.rules: only that member may create their own event, and never
+// edit it after). Always records an arrival/departure activity entry — the
+// weekly digest already aggregates those — then evaluates active Smart
+// Alert rules for this place/event and, if one matches, records a
+// `smartAlert` activity entry and pushes everyone in the circle except the
+// member the rule is about (so "the people named never see the rule" the
+// UI already promises stays true structurally, not just by convention).
+export const evaluateSmartAlert = onDocumentCreated(
+  {region, document: "circles/{circleId}/places/{placeId}/events/{eventId}"},
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+    const data = objectData(snapshot.data());
+    const {circleId, placeId} = event.params as {circleId: string; placeId: string};
+
+    const memberId = requiredString(data, "memberId", 128);
+    const type = data.type === "arrival" || data.type === "departure" ? data.type : null;
+    const localMinutes = optionalNumber(data, "localMinutes");
+    const localDayOfWeek = optionalNumber(data, "localDayOfWeek");
+    if (!type || localMinutes === undefined || localDayOfWeek === undefined) return;
+
+    const placesRef = db.collection("circles").doc(circleId).collection("places").doc(placeId);
+    const [placeSnapshot, memberSnapshot] = await Promise.all([
+      placesRef.get(),
+      db.collection("circles").doc(circleId).collection("members").doc(memberId).get(),
+    ]);
+    if (!placeSnapshot.exists || !memberSnapshot.exists) return;
+
+    const placeName = requiredString(objectData(placeSnapshot.data()), "name", 120);
+    const memberName = (memberSnapshot.get("displayName") as string | undefined)?.trim() || "A circle member";
+    const activityCollection = db.collection("circles").doc(circleId).collection("activity");
+
+    await activityCollection.add({
+      kind: type,
+      memberId,
+      placeId,
+      placeName,
+      title: `${memberName} ${type === "arrival" ? "arrived at" : "left"} ${placeName}`,
+      detail: type === "arrival" ? "Arrival alert" : "Departure alert",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    const ruleEvent = type === "arrival" ? "arrives" : "leaves";
+    const rulesSnapshot = await placesRef.collection("alertRules")
+      .where("isOn", "==", true)
+      .where("event", "==", ruleEvent)
+      .get();
+    if (rulesSnapshot.empty) return;
+
+    const dayKey = new Date().toISOString().slice(0, 10);
+
+    for (const ruleDoc of rulesSnapshot.docs) {
+      const rule = objectData(ruleDoc.data());
+      if (!matchesRule(rule, memberId, localMinutes, localDayOfWeek)) continue;
+
+      if (rule.frequency === "onceADay") {
+        const alreadyFired = await activityCollection
+          .where("kind", "==", "smartAlert")
+          .where("ruleId", "==", ruleDoc.id)
+          .where("firedDayKey", "==", dayKey)
+          .limit(1)
+          .get();
+        if (!alreadyFired.empty) continue;
+      }
+
+      const sentence = ruleSentence(rule, memberName, placeName);
+      await activityCollection.add({
+        kind: "smartAlert",
+        memberId,
+        placeId,
+        placeName,
+        ruleId: ruleDoc.id,
+        title: sentence,
+        detail: "Smart Alert",
+        firedDayKey: dayKey,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      if (rule.frequency !== "weeklySummary") {
+        await sendToMembers(circleId, memberId, {title: "Smart Alert", body: sentence}, {type: "smartAlert", circleId, placeId});
+      }
+    }
+  }
+);

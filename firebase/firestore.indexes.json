@@ -8,7 +8,24 @@
         {"fieldPath": "status", "order": "ASCENDING"},
         {"fieldPath": "expiresAt", "order": "ASCENDING"}
       ]
+    },
+    {
+      "collectionGroup": "alertRules",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "isOn", "order": "ASCENDING"},
+        {"fieldPath": "event", "order": "ASCENDING"}
+      ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "members",
+      "fieldPath": "userId",
+      "indexes": [
+        {"order": "ASCENDING", "queryScope": "COLLECTION"},
+        {"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}
+      ]
+    }
+  ]
 }

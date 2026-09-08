@@ -56,6 +56,18 @@ service cloud.firestore {
             request.resource.data.createdBy == request.auth.uid;
           allow update, delete: if isCircleMember(circleId);
         }
+
+        // Raw geofence crossings a member's own device observed. Only the
+        // member it's about may report it, and never edit or remove it after
+        // the fact — the evaluateSmartAlert Cloud Function is the only thing
+        // that turns this into an activity entry or a Smart Alert firing.
+        match /events/{eventId} {
+          allow read: if isCircleMember(circleId);
+          allow create: if isCircleMember(circleId) &&
+            request.resource.data.memberId == request.auth.uid &&
+            (request.resource.data.type == 'arrival' || request.resource.data.type == 'departure');
+          allow update, delete: if false;
+        }
       }
 
       // Check-ins are authored by the sender only, and immutable once sent.
