@@ -9,6 +9,7 @@ struct MainMapView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var circleService: CircleService
     @StateObject private var liveLocations = LiveCircleLocationsService(firebaseConfigured: true)
+    private let widgetSnapshotWriter: WidgetSnapshotWriting = WidgetSnapshotWriter()
 
     @State private var selectedMemberID: String?
     @State private var isSwitcherExpanded = false
@@ -48,6 +49,10 @@ struct MainMapView: View {
         }
         .task(id: circleService.selectedCircleID) {
             liveLocations.observe(circleID: circleService.selectedCircleID)
+        }
+        .onChange(of: allMembers) { _, newMembers in
+            guard let circleName = selectedCircle?.name else { return }
+            widgetSnapshotWriter.writeSnapshot(circleName: circleName, members: newMembers)
         }
     }
 

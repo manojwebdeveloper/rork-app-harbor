@@ -75,9 +75,9 @@ struct YouView: View {
                     }
 
                     NavigationLink {
-                        CircleManagementView()
+                        ManageCirclesView()
                     } label: {
-                        Label("Create or join a circle", systemImage: "person.3.sequence.fill")
+                        Label("Manage your circles", systemImage: "person.3.sequence.fill")
                     }
                 }
 

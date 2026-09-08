@@ -1,7 +1,11 @@
 import SwiftUI
+import UIKit
 
-/// Placeholder — layout only, except the account deletion link which is live.
 struct PrivacyDataView: View {
+    @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var locationService: LocationService
+
     @State private var isSharingBatteryLevel = true
     @State private var isSharingLowBatteryAlerts = true
 
@@ -39,8 +43,11 @@ struct PrivacyDataView: View {
             }
 
             Section("Who can see you") {
-                LabeledContent("Circle memberships", value: "Firebase")
-                LabeledContent("Location sharing", value: "Not connected")
+                LabeledContent("Circle memberships", value: "\(circleService.circles.count)")
+                LabeledContent(
+                    "Location sharing",
+                    value: locationService.isSharingPaused ? "Paused" : "\(locationService.sharingCircleIDs.count) circle\(locationService.sharingCircleIDs.count == 1 ? "" : "s")"
+                )
             }
 
             Section("Your location history") {
@@ -73,19 +80,19 @@ struct PrivacyDataView: View {
                 .frame(width: 34, height: 34)
                 .overlay { Circle().stroke(Color(.warmAmber), lineWidth: 1.5) }
                 .overlay {
-                    Text(HarborPrivateFamilyLocationSample.you.initials)
+                    Text(initials)
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundStyle(Color(.warmAmber))
                 }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(HarborPrivateFamilyLocationSample.you.name)
+                Text(authService.displayName)
                     .font(.system(size: 15, weight: .bold))
 
                 HStack(spacing: 5) {
-                    Text(HarborPrivateFamilyLocationSample.you.place)
+                    Text(locationService.isSharingPaused ? "Sharing paused" : "Live")
 
-                    if isSharingBatteryLevel, let batteryPercent = HarborPrivateFamilyLocationSample.you.batteryPercent {
+                    if isSharingBatteryLevel, let batteryPercent {
                         Text("|")
                             .foregroundStyle(.tertiary)
                         HStack(spacing: 3) {
@@ -105,5 +112,15 @@ struct PrivacyDataView: View {
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(Capsule())
         .overlay { Capsule().stroke(Color(.mineralBorder), lineWidth: 0.5) }
+        .onAppear { UIDevice.current.isBatteryMonitoringEnabled = true }
+    }
+
+    private var initials: String {
+        let letters = authService.displayName.split(separator: " ").compactMap(\.first).prefix(2)
+        return letters.isEmpty ? "?" : String(letters).uppercased()
+    }
+
+    private var batteryPercent: Int? {
+        UIDevice.current.batteryLevel >= 0 ? Int(UIDevice.current.batteryLevel * 100) : nil
     }
 }

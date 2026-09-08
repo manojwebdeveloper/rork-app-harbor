@@ -1,7 +1,10 @@
 import SwiftUI
 
-/// Phase 2 circle creation flow: kind → duration (travel only) → name → ready.
-/// Layout and navigation only — no circle is created and nothing is written anywhere.
+/// Real, Firebase-backed circle creation flow: kind → duration (travel only)
+/// → name → ready. This is the one circle-creation flow in the app — see
+/// harbor-ios-standards on merging Phase 1/Phase 2 duplicates: this keeps
+/// the Phase 2 visual design and now calls `CircleService.createCircle`
+/// directly instead of the plain-Form `CreateCircleView`, which is deleted.
 struct NewCircleFlowView: View {
     private enum Step: Hashable {
         case duration
@@ -14,14 +17,24 @@ struct NewCircleFlowView: View {
         case travel
 
         var isTravel: Bool { self == .travel }
+
+        var firebaseKind: FirebaseCircleSummary.Kind {
+            self == .travel ? .trip : .family
+        }
     }
 
     let onFinished: () -> Void
 
+    @EnvironmentObject private var circleService: CircleService
+
     @State private var path: [Step] = []
     @State private var kind: CircleKind = .everyday
-    @State private var duration: TripDuration = .oneWeek
+    @State private var duration: TripDurationOption = .oneWeek
+    @State private var customEndDate = Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now
     @State private var name = ""
+    @State private var isCreating = false
+    @State private var errorMessage: String?
+    @State private var createdCircleID: String?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -37,7 +50,7 @@ struct NewCircleFlowView: View {
             .navigationDestination(for: Step.self) { step in
                 switch step {
                 case .duration:
-                    TripDurationStepView(selection: $duration) {
+                    TripDurationStepView(selection: $duration, customEndDate: $customEndDate) {
                         path.append(.name)
                     }
 
@@ -45,27 +58,66 @@ struct NewCircleFlowView: View {
                     NameCircleStepView(
                         kind: kind,
                         duration: duration,
+                        endDate: resolvedEndDate,
                         name: $name,
+                        isCreating: isCreating,
+                        errorMessage: errorMessage,
                         onChangeDuration: { path.removeLast() },
-                        onCreate: { path.append(.ready) }
+                        onCreate: { Task { await create() } }
                     )
 
                 case .ready:
-                    CircleReadyStepView(
-                        name: name.isEmpty ? "Paris Trip" : name,
-                        kind: kind,
-                        duration: duration,
-                        onDone: onFinished
-                    )
-                    .navigationBarBackButtonHidden()
-                    .toolbar(.hidden, for: .navigationBar)
+                    if let createdCircleID {
+                        CircleReadyStepView(
+                            circleID: createdCircleID,
+                            name: name.isEmpty ? (kind.isTravel ? "Your trip" : "Your circle") : name,
+                            kind: kind,
+                            duration: duration,
+                            endDate: resolvedEndDate,
+                            onDone: onFinished
+                        )
+                        .navigationBarBackButtonHidden()
+                        .toolbar(.hidden, for: .navigationBar)
+                    }
                 }
             }
         }
     }
+
+    private var resolvedEndDate: Date {
+        switch duration {
+        case .threeDays: Self.endOfDay(Calendar.current.date(byAdding: .day, value: 3, to: .now) ?? .now)
+        case .oneWeek: Self.endOfDay(Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now)
+        case .custom: customEndDate
+        }
+    }
+
+    private static func endOfDay(_ date: Date) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        components.hour = 20
+        return Calendar.current.date(from: components) ?? date
+    }
+
+    private func create() async {
+        isCreating = true
+        errorMessage = nil
+        do {
+            let circleID = try await circleService.createCircle(
+                name: name,
+                kind: kind.firebaseKind,
+                expiresAt: kind.isTravel ? resolvedEndDate : nil
+            )
+            createdCircleID = circleID
+            isCreating = false
+            path.append(.ready)
+        } catch {
+            isCreating = false
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
-enum TripDuration: Hashable, CaseIterable, Identifiable {
+enum TripDurationOption: Hashable, CaseIterable, Identifiable {
     case threeDays
     case oneWeek
     case custom
@@ -82,17 +134,9 @@ enum TripDuration: Hashable, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .threeDays: "Ends Tuesday, 8:00 PM"
-        case .oneWeek: "Ends Saturday 13 Sep, 8:00 PM"
+        case .threeDays: "Ends 3 days from now, 8:00 PM"
+        case .oneWeek: "Ends 1 week from now, 8:00 PM"
         case .custom: "Pick the day it should end"
-        }
-    }
-
-    var endsText: String {
-        switch self {
-        case .threeDays: "Ends Tuesday, 8:00 PM"
-        case .oneWeek: "Ends Saturday 13 Sep, 8:00 PM"
-        case .custom: "Ends on your chosen date"
         }
     }
 }
@@ -195,7 +239,8 @@ private struct CircleKindStepView: View {
 
 /// Step 2 — how long the travel circle lasts.
 private struct TripDurationStepView: View {
-    @Binding var selection: TripDuration
+    @Binding var selection: TripDurationOption
+    @Binding var customEndDate: Date
     let onContinue: () -> Void
 
     var body: some View {
@@ -225,34 +270,33 @@ private struct TripDurationStepView: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 10)
 
-            VStack(spacing: 12) {
-                ForEach(TripDuration.allCases) { duration in
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) { selection = duration }
-                    } label: {
-                        row(for: duration)
+            ScrollView {
+                VStack(spacing: 12) {
+                    ForEach(TripDurationOption.allCases) { duration in
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) { selection = duration }
+                        } label: {
+                            row(for: duration)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+
+                    if selection == .custom {
+                        DatePicker(
+                            "Ends",
+                            selection: $customEndDate,
+                            in: Date.now.addingTimeInterval(3_600)...,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                        .padding(14)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.field, style: .continuous))
+                    }
                 }
+                .padding(.top, 24)
             }
-            .padding(.top, 24)
 
             Spacer()
-
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "clock")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                Text("Sharing stops on \(selection.detail.replacingOccurrences(of: "Ends ", with: "")). You can extend it any time before then.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.field, style: .continuous))
-            .padding(.bottom, 16)
 
             PrimaryButton(title: "Continue", action: onContinue)
                 .padding(.bottom, 12)
@@ -262,7 +306,7 @@ private struct TripDurationStepView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func row(for duration: TripDuration) -> some View {
+    private func row(for duration: TripDurationOption) -> some View {
         let isSelected = duration == selection
 
         return HStack(spacing: 13) {
@@ -305,8 +349,11 @@ private struct TripDurationStepView: View {
 /// Step 3 — name the circle.
 private struct NameCircleStepView: View {
     let kind: NewCircleFlowView.CircleKind
-    let duration: TripDuration
+    let duration: TripDurationOption
+    let endDate: Date
     @Binding var name: String
+    let isCreating: Bool
+    let errorMessage: String?
     let onChangeDuration: () -> Void
     let onCreate: () -> Void
 
@@ -344,7 +391,7 @@ private struct NameCircleStepView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Travel circle")
                             .font(.system(size: 15, weight: .bold))
-                        Text(duration.endsText)
+                        Text("Ends \(endDate.formatted(date: .abbreviated, time: .shortened))")
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                     }
@@ -365,11 +412,18 @@ private struct NameCircleStepView: View {
                 .padding(.top, 12)
             }
 
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(Color(.signalRed))
+                    .padding(.top, 12)
+            }
+
             Spacer()
 
             PrimaryButton(
-                title: kind.isTravel ? "Create travel circle" : "Create circle",
-                isEnabled: isValid,
+                title: isCreating ? "Creating…" : (kind.isTravel ? "Create travel circle" : "Create circle"),
+                isEnabled: isValid && !isCreating,
                 action: onCreate
             )
             .padding(.bottom, 12)
@@ -377,6 +431,7 @@ private struct NameCircleStepView: View {
         .padding(.horizontal, 24)
         .background(Color(uiColor: .systemBackground))
         .navigationBarTitleDisplayMode(.inline)
+        .interactiveDismissDisabled(isCreating)
     }
 
     private var isValid: Bool {
@@ -386,9 +441,11 @@ private struct NameCircleStepView: View {
 
 /// Step 4 — the circle is ready to share.
 private struct CircleReadyStepView: View {
+    let circleID: String
     let name: String
     let kind: NewCircleFlowView.CircleKind
-    let duration: TripDuration
+    let duration: TripDurationOption
+    let endDate: Date
     let onDone: () -> Void
 
     var body: some View {
@@ -413,7 +470,7 @@ private struct CircleReadyStepView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 11, weight: .semibold))
-                    Text(duration.endsText)
+                    Text("Ends \(endDate.formatted(date: .abbreviated, time: .shortened))")
                         .font(.system(size: 13, weight: .bold))
                 }
                 .foregroundStyle(Color(.clearSky))
@@ -435,7 +492,18 @@ private struct CircleReadyStepView: View {
 
             Spacer()
 
-            PrimaryButton(title: "Share invitation link") { }
+            NavigationLink {
+                InviteView(circleID: circleID, doneTitle: "Done", onDone: onDone)
+            } label: {
+                Text("Share invitation link")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .foregroundStyle(.white)
+                    .background(Color(.calmTeal))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
 
             Button("Done", action: onDone)
                 .font(.headline)

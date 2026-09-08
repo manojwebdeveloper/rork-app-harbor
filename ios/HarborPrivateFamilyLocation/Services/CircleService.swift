@@ -245,6 +245,18 @@ final class CircleService: ObservableObject {
         )
     }
 
+    /// One-time fetch (not a live listener) for circles other than the
+    /// selected one — used to render member-avatar rows in a multi-circle
+    /// list without holding a listener open per circle.
+    func fetchMembers(circleID: String) async throws -> [FirebaseCircleMember] {
+        guard isFirebaseConfigured else { throw CircleServiceError.firebaseNotConfigured }
+        let snapshot = try await Firestore.firestore()
+            .collection("circles").document(circleID).collection("members")
+            .order(by: "joinedAt")
+            .getDocuments()
+        return snapshot.documents.compactMap { FirebaseCircleMember(document: $0) }
+    }
+
     func setSharingEnabled(_ isEnabled: Bool, circleID: String) async throws {
         guard isFirebaseConfigured, let userID = observedUserID else {
             throw CircleServiceError.firebaseNotConfigured
