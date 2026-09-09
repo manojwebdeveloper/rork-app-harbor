@@ -6,6 +6,7 @@ struct MemberStatusStripView: View {
     let selectedMemberID: String?
     let onSelect: (SampleMember) -> Void
     let onSelectAll: () -> Void
+    let onAddMember: () -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -28,11 +29,42 @@ struct MemberStatusStripView: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                Button(action: onAddMember) {
+                    addMemberChip
+                }
+                .buttonStyle(.plain)
             }
             .padding(.vertical, 4)
         }
         .contentMargins(.horizontal, 16)
         .scrollClipDisabled()
+    }
+
+    private var addMemberChip: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(Color(.mineralBorder).opacity(0.3))
+                .frame(width: 34, height: 34)
+                .overlay {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color(.calmTeal))
+                }
+
+            Text("Add member")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color(.calmTeal))
+        }
+        .padding(.leading, 9)
+        .padding(.trailing, 16)
+        .padding(.vertical, 9)
+        .background(Color(uiColor: .systemBackground))
+        .clipShape(Capsule())
+        .overlay {
+            Capsule().strokeBorder(Color(.calmTeal).opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+        }
+        .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
     }
 
     private func chip(for member: SampleMember) -> some View {

@@ -18,6 +18,11 @@ struct MapCanvasView: View {
     // already granted; if it isn't, MapKit just shows nothing extra and
     // .automatic takes over, so it's always safe to set.
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    // Whether the map rotates to match the device's compass heading — the
+    // "heading-up" mode the design's compass button implies, versus the
+    // default fixed north-up orientation.
+    @State private var followsHeading = false
+    @State private var mapStyleOption: MapStyleOption = .standard
 
     var body: some View {
         Map(position: $cameraPosition) {
@@ -39,8 +44,54 @@ struct MapCanvasView: View {
                 }
             }
         }
+        .mapStyle(mapStyleOption.mapStyle)
         .onAppear { focusCamera() }
         .onChange(of: members.map(\.id)) { _, _ in focusCamera() }
+        .overlay(alignment: .topTrailing) {
+            mapControlStack
+                .padding(.top, 130)
+                .padding(.trailing, 16)
+        }
+    }
+
+    private var mapControlStack: some View {
+        VStack(spacing: 10) {
+            MapControlButton(symbol: "scope", isActive: false, accessibilityLabel: "Recenter on my location") {
+                recenterOnSelf()
+            }
+            MapControlButton(symbol: "location.north.line.fill", isActive: followsHeading, accessibilityLabel: "Toggle heading-up orientation") {
+                toggleHeading()
+            }
+            MapControlButton(symbol: "square.3.layers.3d", isActive: mapStyleOption != .standard, accessibilityLabel: "Change map layers") {
+                cycleMapStyle()
+            }
+        }
+    }
+
+    /// Snaps back to the current user's own live coordinate — distinct from
+    /// `focusCamera()`, which frames *every* pinned member and is only ever
+    /// called automatically when the member set changes.
+    private func recenterOnSelf() {
+        withAnimation {
+            if let selfMember = members.first(where: \.isSelf) {
+                cameraPosition = .region(
+                    MKCoordinateRegion(center: selfMember.coordinate, span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02))
+                )
+            } else {
+                cameraPosition = .userLocation(followsHeading: followsHeading, fallback: .automatic)
+            }
+        }
+    }
+
+    private func toggleHeading() {
+        followsHeading.toggle()
+        withAnimation {
+            cameraPosition = .userLocation(followsHeading: followsHeading, fallback: .automatic)
+        }
+    }
+
+    private func cycleMapStyle() {
+        mapStyleOption = mapStyleOption.next
     }
 
     private func focusCamera() {
@@ -59,6 +110,51 @@ struct MapCanvasView: View {
             partial.union(MKMapRect(origin: MKMapPoint(member.coordinate), size: MKMapSize(width: 0, height: 0)))
         }
         cameraPosition = .rect(mapRect.insetBy(dx: -mapRect.width * 0.4, dy: -mapRect.height * 0.4))
+    }
+}
+
+/// The map's layers control cycles through these — standard street map,
+/// satellite+labels, and pure satellite imagery. The design's icon (stacked
+/// squares) implies a general "switch map layers" affordance without
+/// specifying which layers, so this picks the three built-in MapKit styles.
+private enum MapStyleOption: CaseIterable {
+    case standard, hybrid, imagery
+
+    var mapStyle: MapStyle {
+        switch self {
+        case .standard: .standard
+        case .hybrid: .hybrid
+        case .imagery: .imagery
+        }
+    }
+
+    var next: MapStyleOption {
+        let all = Self.allCases
+        let index = all.firstIndex(of: self) ?? 0
+        return all[(index + 1) % all.count]
+    }
+}
+
+/// One rounded-square control button, matching the design's right-side map
+/// control stack (recenter, heading, layers).
+private struct MapControlButton: View {
+    let symbol: String
+    let isActive: Bool
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(isActive ? Color(.calmTeal) : Color.primary)
+                .frame(width: 44, height: 44)
+                .background(Color(uiColor: .systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: .black.opacity(0.1), radius: 10, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 

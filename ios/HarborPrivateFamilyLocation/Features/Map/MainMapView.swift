@@ -8,7 +8,6 @@ import UIKit
 /// for how a `FirebaseCircleSummary`/`FirebaseCircleMember` plus a live RTDB tick
 /// become the `SampleCircle`/`SampleMember` view models the Phase 2 subviews expect.
 struct MainMapView: View {
-    @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var circleService: CircleService
     @EnvironmentObject private var locationService: LocationService
@@ -23,6 +22,7 @@ struct MainMapView: View {
     @State private var isShowingNewCircle = false
     @State private var isSendingSafeBroadcast = false
     @State private var isUpdatingTrip = false
+    @State private var isShowingInvite = false
     @State private var errorMessage: String?
     @State private var path: [MapRoute] = []
 
@@ -134,10 +134,11 @@ struct MainMapView: View {
                     .disabled(isSendingSafeBroadcast)
 
                 MemberStatusStripView(
-                    members: allMembers,
+                    members: otherMembers,
                     selectedMemberID: selectedMemberID,
                     onSelect: { selectedMemberID = $0.id },
-                    onSelectAll: { selectedMemberID = nil }
+                    onSelectAll: { selectedMemberID = nil },
+                    onAddMember: { isShowingInvite = true }
                 )
                 .padding(.bottom, 96)
             }
@@ -154,6 +155,12 @@ struct MainMapView: View {
         }
         .sheet(isPresented: $isShowingNewCircle) {
             NewCircleFlowView { isShowingNewCircle = false }
+        }
+        .sheet(isPresented: $isShowingInvite) {
+            NavigationStack {
+                InviteView(circleID: circleService.selectedCircleID ?? "")
+            }
+            .environmentObject(circleService)
         }
         .fullScreenCover(isPresented: $isShowingSafeReceipt) {
             CircleActivityPreviewView {
@@ -209,6 +216,13 @@ struct MainMapView: View {
     /// somewhere real to sit, unlike the status strip which can show "waiting".
     private var pinnedMembers: [SampleMember] {
         allMembers.filter { liveLocations.locationsByUserID[$0.id] != nil }
+    }
+
+    /// The bottom carousel is "everyone but me" — the current user already
+    /// sees themselves via their own map marker, so per design they don't
+    /// get a redundant chip in their own member list.
+    private var otherMembers: [SampleMember] {
+        allMembers.filter { !$0.isSelf }
     }
 
     private var isEndingSoon: Bool {
@@ -350,24 +364,6 @@ struct MainMapView: View {
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            Button {
-                appState.selectedTab = .you
-            } label: {
-                Circle()
-                    .fill(Color(.warmAmber).opacity(0.16))
-                    .frame(width: 42, height: 42)
-                    .overlay { Circle().stroke(Color(.warmAmber), lineWidth: 2) }
-                    .overlay {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color(.warmAmber))
-                    }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Your profile")
-
-            Spacer(minLength: 0)
-
             if let selectedCircle {
                 CircleSelectorPill(circle: selectedCircle, isExpanded: isSwitcherExpanded) {
                     withAnimation(.snappy(duration: 0.25)) {
