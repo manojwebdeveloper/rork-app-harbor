@@ -21,6 +21,11 @@ const minimumTripExtensionMs = 60 * 60 * 1000;
 
 type JsonObject = Record<string, unknown>;
 type CircleRole = "owner" | "admin" | "member";
+// "safe" and "tripEnded" have no dedicated toggle in the Notifications
+// settings — only Quiet Hours gates them. "arrivalDeparture" covers both
+// raw geofence events and the Smart Alerts they can trigger, matching the
+// single "Arrivals and departures" row in the design.
+type NotificationCategory = "safe" | "arrivalDeparture" | "checkIn" | "tripEnded";
 
 function requireUid(auth: {uid: string} | undefined): string {
   if (!auth?.uid) throw new HttpsError("unauthenticated", "Sign in before using this feature.");
@@ -108,7 +113,52 @@ async function removeCircleFromRealtimeDatabase(circleId: string): Promise<void>
   }
 }
 
-async function sendToMembers(circleId: string, excludeUid: string | null, notification: {title: string; body: string}, data: Record<string, string>): Promise<void> {
+/// Minutes since local midnight for `timeZone` right now, or null if the
+/// zone identifier is invalid (falls back to "always allowed" — an unknown
+/// zone must never silently suppress every notification).
+function localMinutesNow(timeZone: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const hour = Number(parts.find((part) => part.type === "hour")?.value);
+    const minute = Number(parts.find((part) => part.type === "minute")?.value);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+    return (hour % 24) * 60 + minute;
+  } catch {
+    return null;
+  }
+}
+
+function isQuietHoursActive(prefs: JsonObject): boolean {
+  if (prefs.quietHoursEnabled !== true) return false;
+  const start = typeof prefs.quietHoursStart === "number" ? prefs.quietHoursStart : null;
+  const end = typeof prefs.quietHoursEnd === "number" ? prefs.quietHoursEnd : null;
+  if (start === null || end === null || start === end) return false;
+  const timeZone = typeof prefs.timeZoneIdentifier === "string" ? prefs.timeZoneIdentifier : "Etc/UTC";
+  const nowMinutes = localMinutesNow(timeZone);
+  if (nowMinutes === null) return false;
+  // A window like 22:00-07:00 wraps past midnight.
+  return start < end ? nowMinutes >= start && nowMinutes < end : nowMinutes >= start || nowMinutes < end;
+}
+
+function isNotificationAllowed(userData: JsonObject, category: NotificationCategory): boolean {
+  const prefs = objectData(userData.notificationPreferences);
+  if (category === "arrivalDeparture" && prefs.arrivalsAndDepartures === false) return false;
+  if (category === "checkIn" && prefs.checkIns === false) return false;
+  return !isQuietHoursActive(prefs);
+}
+
+async function sendToMembers(
+  circleId: string,
+  excludeUid: string | null,
+  notification: {title: string; body: string},
+  data: Record<string, string>,
+  category: NotificationCategory
+): Promise<void> {
   const members = await db.collection("circles").doc(circleId).collection("members").get();
   const recipientIds = members.docs
     .map((member) => member.get("userId") as string | undefined)
@@ -117,7 +167,9 @@ async function sendToMembers(circleId: string, excludeUid: string | null, notifi
 
   const userDocs = await db.getAll(...recipientIds.map((userId) => db.collection("users").doc(userId)));
   const tokens = userDocs.flatMap((snapshot) => {
-    const value = snapshot.get("fcmTokens");
+    const userData = objectData(snapshot.data());
+    if (!isNotificationAllowed(userData, category)) return [];
+    const value = userData.fcmTokens;
     return Array.isArray(value) ? (value as string[]) : [];
   });
   if (tokens.length === 0) return;
@@ -413,11 +465,35 @@ export const sendSafeBroadcast = onCall({region, enforceAppCheck: false}, async 
     circleId,
     uid,
     {title: circleName, body: `${displayName} let the circle know they're safe.`},
-    {type: "safe", circleId}
+    {type: "safe", circleId},
+    "safe"
   );
 
   return {sent: true};
 });
+
+/// Shared by the hourly sweep and the owner-triggered "End now" action so
+/// both go through the exact same shutdown sequence.
+async function expireCircleNow(circleRef: DocumentReference, circleData: JsonObject): Promise<void> {
+  const circleId = circleRef.id;
+  const circleName = requiredString(circleData, "name", 60);
+  await circleRef.update({status: "expired", updatedAt: FieldValue.serverTimestamp()});
+  await db.collection("circles").doc(circleId).collection("activity").add({
+    kind: "system",
+    memberId: null,
+    title: `${circleName} has ended`,
+    detail: "This Trip Circle's location sharing has stopped.",
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await removeCircleFromRealtimeDatabase(circleId);
+  await sendToMembers(
+    circleId,
+    null,
+    {title: circleName, body: "This trip has ended and location sharing has stopped."},
+    {type: "tripEnded", circleId},
+    "tripEnded"
+  );
+}
 
 // Runs hourly: Trip Circles end themselves, revoking location sharing immediately
 // rather than leaving a stale "live" position visible after the trip is over.
@@ -430,24 +506,113 @@ export const expireTravelCircles = onSchedule({region, schedule: "0 * * * *", ti
     .get();
 
   for (const circleDoc of expired.docs) {
-    const circleId = circleDoc.id;
-    const circleName = requiredString(objectData(circleDoc.data()), "name", 60);
-    await circleDoc.ref.update({status: "expired", updatedAt: FieldValue.serverTimestamp()});
-    await db.collection("circles").doc(circleId).collection("activity").add({
-      kind: "system",
-      memberId: null,
-      title: `${circleName} has ended`,
-      detail: "This Trip Circle's location sharing has stopped.",
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    await removeCircleFromRealtimeDatabase(circleId);
-    await sendToMembers(
-      circleId,
-      null,
-      {title: circleName, body: "This trip has ended and location sharing has stopped."},
-      {type: "tripEnded", circleId}
-    );
+    await expireCircleNow(circleDoc.ref, objectData(circleDoc.data()));
   }
+});
+
+// Owner/admin-triggered early end for a live Trip Circle — "End now" in the
+// Location Sharing screen. Goes through the same shutdown as the hourly
+// sweep rather than just editing expiresAt, so it takes effect immediately
+// instead of waiting for the next hourly run.
+export const endTripNow = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const circleId = requiredString(objectData(request.data), "circleId", 128);
+  const {circleRef, circle} = await circleAndRole(circleId, uid, ["owner", "admin"]);
+  if (circle.kind !== "trip") throw new HttpsError("failed-precondition", "Only Trip Circles can be ended early.");
+  if (circle.status !== "active") throw new HttpsError("failed-precondition", "This trip has already ended.");
+  await expireCircleNow(circleRef, circle);
+  return {ended: true};
+});
+
+// Lets an owner/admin rename a circle — the only field circles.rules still
+// denies direct client writes for. Keeps every member's denormalized
+// circleRefs copy (CircleService reads that directly) in sync too.
+export const renameCircle = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const data = objectData(request.data);
+  const circleId = requiredString(data, "circleId", 128);
+  const name = requiredString(data, "name", 60);
+  const {circleRef} = await circleAndRole(circleId, uid, ["owner", "admin"]);
+  await circleRef.update({name, updatedAt: FieldValue.serverTimestamp()});
+
+  const members = await circleRef.collection("members").get();
+  await Promise.all(members.docs.map((member) => {
+    const userId = member.get("userId") as string | undefined;
+    if (!userId) return Promise.resolve();
+    return db.collection("users").doc(userId).collection("circleRefs").doc(circleId).set({name}, {merge: true});
+  }));
+
+  return {renamed: true};
+});
+
+// Compiles everything Harbor holds about the caller into one JSON payload —
+// the "export a copy of your data" privacy commitment. Returned directly in
+// the callable response (personal data at this app's scale is small) for
+// the client to save and share, rather than emailing a link — no Cloud
+// Storage/email infrastructure needed for what's essentially a JSON dump.
+export const exportUserData = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const userSnapshot = await db.collection("users").doc(uid).get();
+  const profile = objectData(userSnapshot.data());
+
+  const memberships = await db.collectionGroup("members").where("userId", "==", uid).get();
+  const circles: JsonObject[] = [];
+  const checkIns: JsonObject[] = [];
+  const places: JsonObject[] = [];
+
+  for (const membership of memberships.docs) {
+    const circleRef = membership.ref.parent.parent;
+    if (!circleRef) continue;
+    const circleSnapshot = await circleRef.get();
+    if (!circleSnapshot.exists) continue;
+    const circleData = objectData(circleSnapshot.data());
+    circles.push({
+      id: circleRef.id,
+      name: circleData.name ?? null,
+      kind: circleData.kind ?? null,
+      role: membership.get("role") ?? null,
+      joinedAt: (membership.get("joinedAt") as Timestamp | undefined)?.toDate().toISOString() ?? null,
+    });
+
+    const [ownCheckIns, ownPlaces] = await Promise.all([
+      circleRef.collection("checkIns").where("userId", "==", uid).get(),
+      circleRef.collection("places").where("createdBy", "==", uid).get(),
+    ]);
+    for (const doc of ownCheckIns.docs) {
+      const d = objectData(doc.data());
+      checkIns.push({
+        circleId: circleRef.id,
+        message: d.message ?? null,
+        customText: d.customText ?? null,
+        sentAt: (d.sentAt as Timestamp | undefined)?.toDate().toISOString() ?? null,
+      });
+    }
+    for (const doc of ownPlaces.docs) {
+      const d = objectData(doc.data());
+      places.push({
+        circleId: circleRef.id,
+        name: d.name ?? null,
+        address: d.address ?? null,
+        category: d.category ?? null,
+        radiusMeters: d.radiusMeters ?? null,
+      });
+    }
+  }
+
+  return {
+    exportedAt: new Date().toISOString(),
+    profile: {
+      displayName: profile.displayName ?? null,
+      email: profile.email ?? null,
+      notificationPreferences: profile.notificationPreferences ?? null,
+      digestPreferences: profile.digestPreferences ?? null,
+      sharingExpirationPreference: profile.sharingExpirationPreference ?? null,
+      appearancePreference: profile.appearancePreference ?? null,
+    },
+    circles,
+    checkIns,
+    places,
+  };
 });
 
 // Runs weekly. Per-user delivery-time preferences (see updateDigestPreferences)
@@ -642,8 +807,42 @@ export const evaluateSmartAlert = onDocumentCreated(
       });
 
       if (rule.frequency !== "weeklySummary") {
-        await sendToMembers(circleId, memberId, {title: "Smart Alert", body: sentence}, {type: "smartAlert", circleId, placeId});
+        await sendToMembers(circleId, memberId, {title: "Smart Alert", body: sentence}, {type: "smartAlert", circleId, placeId}, "arrivalDeparture");
       }
     }
+  }
+);
+
+// Circle-wide push for a new check-in, gated by each recipient's own
+// "Check-ins from your circle" preference (and Quiet Hours). The check-in
+// itself is written directly by the client (see firestore.rules); this only
+// handles the notification fan-out, matching the pattern for other pushes.
+export const notifyCheckIn = onDocumentCreated(
+  {region, document: "circles/{circleId}/checkIns/{checkInId}"},
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+    const data = objectData(snapshot.data());
+    const {circleId} = event.params as {circleId: string};
+    const userId = typeof data.userId === "string" ? data.userId : null;
+    if (!userId) return;
+
+    const [circleSnapshot, memberSnapshot] = await Promise.all([
+      db.collection("circles").doc(circleId).get(),
+      db.collection("circles").doc(circleId).collection("members").doc(userId).get(),
+    ]);
+    if (!circleSnapshot.exists) return;
+
+    const circleName = requiredString(objectData(circleSnapshot.data()), "name", 60);
+    const memberName = (memberSnapshot.get("displayName") as string | undefined)?.trim() || "A circle member";
+    const message = typeof data.message === "string" ? data.message : "sent a check-in";
+
+    await sendToMembers(
+      circleId,
+      userId,
+      {title: circleName, body: `${memberName}: ${message}`},
+      {type: "checkIn", circleId},
+      "checkIn"
+    );
   }
 );

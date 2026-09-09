@@ -5,9 +5,14 @@ struct PrivacyDataView: View {
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var circleService: CircleService
     @EnvironmentObject private var locationService: LocationService
+    @EnvironmentObject private var userPreferencesService: UserPreferencesService
 
     @State private var isSharingBatteryLevel = true
     @State private var isSharingLowBatteryAlerts = true
+    @State private var isDeletingHistory = false
+    @State private var isExporting = false
+    @State private var exportedFileURL: URL?
+    @State private var errorMessage: String?
 
     var body: some View {
         List {
@@ -48,17 +53,58 @@ struct PrivacyDataView: View {
                     "Location sharing",
                     value: locationService.isSharingPaused ? "Paused" : "\(locationService.sharingCircleIDs.count) circle\(locationService.sharingCircleIDs.count == 1 ? "" : "s")"
                 )
+
+                if !activeTripCircles.isEmpty {
+                    ForEach(activeTripCircles) { circle in
+                        LabeledContent(circle.name, value: circle.expiresAt.map { "until \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "Active")
+                    }
+                }
+
+                NavigationLink {
+                    SharingExpirationPicker()
+                } label: {
+                    LabeledContent("When sharing should stop", value: userPreferencesService.sharingExpirationPreference.title)
+                }
+
+                Button(locationService.isSharingPaused ? "Resume all sharing" : "Pause all sharing") {
+                    locationService.setSharingPaused(!locationService.isSharingPaused)
+                }
             }
 
-            Section("Your location history") {
-                LabeledContent("How long we keep it", value: "No data collected")
-                Button("Delete location history now") { }
-                    .disabled(true)
+            Section {
+                LabeledContent("How long we keep it", value: "We don't keep a history")
+                Button(isDeletingHistory ? "Clearing…" : "Delete location history now") {
+                    Task { await deleteHistory() }
+                }
+                .disabled(isDeletingHistory)
+            } header: {
+                Text("Your location history")
+            } footer: {
+                Text("Harbor only ever stores your current position while sharing is on — it's replaced every time you move, not logged. This clears the last position your circles can see right now.")
+            }
+
+            Section {
+                LabeledContent("This device", value: "Signed in")
+                Button("Sign out", role: .destructive) {
+                    authService.signOut()
+                }
+            } header: {
+                Text("Devices signed in")
+            } footer: {
+                Text("Firebase doesn't provide a list of every device or session signed in to your account — signing out only ends the session on this device. If you think another device has access you didn't authorize, delete your account below and create a new one.")
             }
 
             Section("Your account") {
-                Button("Export a copy of your data") { }
-                    .disabled(true)
+                Button(isExporting ? "Preparing…" : "Export a copy of your data") {
+                    Task { await exportData() }
+                }
+                .disabled(isExporting)
+
+                if let exportedFileURL {
+                    ShareLink(item: exportedFileURL) {
+                        Label("Share your data export", systemImage: "square.and.arrow.up")
+                    }
+                }
 
                 NavigationLink {
                     DeleteAccountView()
@@ -67,9 +113,21 @@ struct PrivacyDataView: View {
                         .foregroundStyle(Color(.signalRed))
                 }
             }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Color(.signalRed))
+                }
+            }
         }
         .navigationTitle("Privacy & data")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var activeTripCircles: [FirebaseCircleSummary] {
+        circleService.circles.filter { $0.kind == .trip }
     }
 
     /// Mirrors the map chip so the setting's effect is obvious.
@@ -122,5 +180,27 @@ struct PrivacyDataView: View {
 
     private var batteryPercent: Int? {
         UIDevice.current.batteryLevel >= 0 ? Int(UIDevice.current.batteryLevel * 100) : nil
+    }
+
+    private func deleteHistory() async {
+        isDeletingHistory = true
+        errorMessage = nil
+        defer { isDeletingHistory = false }
+        do {
+            try await locationService.deleteLocationHistory()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func exportData() async {
+        isExporting = true
+        errorMessage = nil
+        defer { isExporting = false }
+        do {
+            exportedFileURL = try await authService.exportData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

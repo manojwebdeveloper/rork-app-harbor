@@ -173,6 +173,23 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Compiles everything Harbor holds about the signed-in user into a JSON
+    /// file the caller can share/save — the "export a copy of your data"
+    /// privacy commitment. Writes to a temp file rather than holding the
+    /// payload in memory only, so the caller can hand it straight to `ShareLink`.
+    func exportData() async throws -> URL {
+        guard isFirebaseConfigured else { throw AuthFlowError.notSignedIn }
+        let callable = Functions.functions(region: functionsRegion).httpsCallable("exportUserData")
+        let result = try await callable.call([:])
+        guard let payload = result.data as? [String: Any] else {
+            throw AuthFlowError.invalidExportResponse
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("harbor-data-export.json")
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
     private func prepareAppleRequest(_ request: ASAuthorizationAppleIDRequest) {
         do {
             let nonce = try Self.randomNonceString()
@@ -294,6 +311,8 @@ private enum AuthFlowError: LocalizedError {
     case missingIdentityToken
     case missingAuthorizationCode
     case nonceGenerationFailed(OSStatus)
+    case notSignedIn
+    case invalidExportResponse
 
     var errorDescription: String? {
         switch self {
@@ -307,6 +326,10 @@ private enum AuthFlowError: LocalizedError {
             "Apple did not return the code required to delete this account."
         case .nonceGenerationFailed:
             "A secure sign-in request could not be created."
+        case .notSignedIn:
+            "Firebase has not been configured for this build."
+        case .invalidExportResponse:
+            "HarborPrivateFamilyLocation received an invalid response. Please try again."
         }
     }
 }

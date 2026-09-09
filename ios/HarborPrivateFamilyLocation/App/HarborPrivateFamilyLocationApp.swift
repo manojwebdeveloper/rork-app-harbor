@@ -13,6 +13,7 @@ struct HarborPrivateFamilyLocationApp: App {
     @StateObject private var placesService: PlacesService
     @StateObject private var activityService: ActivityService
     @StateObject private var pushNotificationService: PushNotificationService
+    @StateObject private var userPreferencesService: UserPreferencesService
 
     init() {
         let firebaseConfigured = FirebaseBootstrap.configureIfPossible()
@@ -23,6 +24,7 @@ struct HarborPrivateFamilyLocationApp: App {
         _placesService = StateObject(wrappedValue: PlacesService(firebaseConfigured: firebaseConfigured))
         _activityService = StateObject(wrappedValue: ActivityService(firebaseConfigured: firebaseConfigured))
         _pushNotificationService = StateObject(wrappedValue: PushNotificationService(firebaseConfigured: firebaseConfigured))
+        _userPreferencesService = StateObject(wrappedValue: UserPreferencesService(firebaseConfigured: firebaseConfigured))
     }
 
     var body: some Scene {
@@ -35,7 +37,9 @@ struct HarborPrivateFamilyLocationApp: App {
                 .environmentObject(placesService)
                 .environmentObject(activityService)
                 .environmentObject(pushNotificationService)
+                .environmentObject(userPreferencesService)
                 .tint(Color(.calmTeal))
+                .preferredColorScheme(userPreferencesService.appearancePreference.colorScheme)
                 .onOpenURL { url in
                     if let code = InvitationLink.code(from: url) {
                         appState.pendingInvitationCode = code
@@ -51,6 +55,7 @@ private struct RootView: View {
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var circleService: CircleService
     @EnvironmentObject private var locationService: LocationService
+    @EnvironmentObject private var userPreferencesService: UserPreferencesService
 
     var body: some View {
         Group {
@@ -81,6 +86,7 @@ private struct RootView: View {
         .task(id: authService.user?.uid) {
             circleService.observeCircles(for: authService.user?.uid)
             locationService.observeSharingCircles(for: authService.user?.uid)
+            userPreferencesService.observe(userID: authService.user?.uid)
         }
         .sheet(isPresented: invitationSheetBinding) {
             JoinCircleView(

@@ -245,6 +245,22 @@ final class CircleService: ObservableObject {
         )
     }
 
+    /// Ends a live Trip Circle immediately rather than waiting for the
+    /// hourly `expireTravelCircles` sweep — "End now" in Location Sharing.
+    func endTripNow(circleID: String) async throws {
+        _ = try await call(
+            "endTripNow",
+            payload: NSDictionary(object: circleID, forKey: "circleId" as NSString)
+        )
+    }
+
+    func renameCircle(circleID: String, name: String) async throws {
+        _ = try await call(
+            "renameCircle",
+            payload: NSDictionary(dictionary: ["circleId": circleID, "name": name])
+        )
+    }
+
     /// One-time fetch (not a live listener) for circles other than the
     /// selected one — used to render member-avatar rows in a multi-circle
     /// list without holding a listener open per circle.

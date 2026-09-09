@@ -86,6 +86,24 @@ final class LocationService: NSObject, ObservableObject {
             }
     }
 
+    /// Harbor doesn't keep a location *history* — RTDB only ever holds each
+    /// circle's current position, overwritten on every tick. This is the
+    /// real equivalent of "delete my location history": clear the last
+    /// position this device published, in every circle, not just the ones
+    /// currently shared with (pausing a circle doesn't itself clear the
+    /// stale last-known point today, so this sweeps all of them).
+    func deleteLocationHistory() async throws {
+        guard isFirebaseConfigured, let userID = observedUserID else { return }
+        let snapshot = try await Firestore.firestore()
+            .collectionGroup("members")
+            .whereField("userId", isEqualTo: userID)
+            .getDocuments()
+        let circleIDs = snapshot.documents.compactMap { $0.reference.parent.parent?.documentID }
+        for circleID in circleIDs {
+            try? await Database.database().reference(withPath: "locations/\(circleID)/\(userID)").removeValue()
+        }
+    }
+
     private func updateTrackingState() {
         let shouldTrack = isFirebaseConfigured && isAuthorized && !isSharingPaused && !sharingCircleIDs.isEmpty
         manager.allowsBackgroundLocationUpdates = shouldTrack && authorizationStatus == .authorizedAlways
