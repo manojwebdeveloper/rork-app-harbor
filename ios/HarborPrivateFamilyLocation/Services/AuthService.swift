@@ -23,6 +23,15 @@ enum FirebaseBootstrap {
             return false
         }
 
+        // GoogleService-Info.plist has no DATABASE_URL entry, so without this
+        // Database.database() falls back to a URL that doesn't match this
+        // project's actual europe-west1 Realtime Database instance. RTDB
+        // rejects that mismatch by killing the connection outright and never
+        // reconnecting (I-RDB034005), which made every location write and
+        // every live-location read silently no-op — the underlying cause of
+        // "own location never resolves".
+        options.databaseURL = "https://harbor-2d498-default-rtdb.europe-west1.firebasedatabase.app"
+
         FirebaseApp.configure(options: options)
         return true
     }

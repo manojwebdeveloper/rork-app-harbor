@@ -11,10 +11,18 @@ struct MapCanvasView: View {
     var showsRoute = true
     let onSelectMember: (SampleMember) -> Void
 
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    // Falls back to the device's own GPS position (native blue dot, via
+    // UserAnnotation below) when no circle member — including the current
+    // user — has a published RTDB coordinate yet, instead of sitting on a
+    // wide, meaningless default region. This needs location permission
+    // already granted; if it isn't, MapKit just shows nothing extra and
+    // .automatic takes over, so it's always safe to set.
+    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
 
     var body: some View {
         Map(position: $cameraPosition) {
+            UserAnnotation()
+
             if showsRoute, members.count > 1 {
                 MapPolyline(coordinates: members.map(\.coordinate))
                     .stroke(Color(.clearSky).opacity(0.55), style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -36,6 +44,8 @@ struct MapCanvasView: View {
     }
 
     private func focusCamera() {
+        // Nobody has published a coordinate yet — stay on .userLocation
+        // (the device's own GPS fix) rather than snapping back to .automatic.
         guard !members.isEmpty else { return }
 
         if members.count == 1, let coordinate = members.first?.coordinate {
@@ -60,6 +70,16 @@ struct MapPinView: View {
     var body: some View {
         VStack(spacing: -5) {
             ZStack {
+                if member.isSelf {
+                    // A persistent highlight, not just a selection state —
+                    // this is what makes the self pin readable as "you" at a
+                    // glance, the way Life360/Find My distinguish their own
+                    // marker from everyone else's.
+                    Circle()
+                        .stroke(Color(.calmTeal), lineWidth: 2)
+                        .frame(width: 66, height: 66)
+                }
+
                 if isSelected {
                     Circle()
                         .fill(member.tint.color.opacity(0.16))

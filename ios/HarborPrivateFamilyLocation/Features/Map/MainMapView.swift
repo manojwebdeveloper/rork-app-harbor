@@ -1,5 +1,7 @@
 import CoreLocation
+@preconcurrency import FirebaseAuth
 import SwiftUI
+import UIKit
 
 /// The map tab. Circles and members are real, Firestore/Realtime-Database-backed
 /// data from `CircleService` and `LiveCircleLocationsService` — see those types
@@ -7,7 +9,9 @@ import SwiftUI
 /// become the `SampleCircle`/`SampleMember` view models the Phase 2 subviews expect.
 struct MainMapView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var circleService: CircleService
+    @EnvironmentObject private var locationService: LocationService
     @StateObject private var liveLocations = LiveCircleLocationsService(firebaseConfigured: true)
     private let widgetSnapshotWriter: WidgetSnapshotWriting = WidgetSnapshotWriter()
 
@@ -70,6 +74,8 @@ struct MainMapView: View {
 
             VStack(spacing: 12) {
                 topBar
+
+                locationPermissionBanner
 
                 if let errorMessage {
                     Text(errorMessage)
@@ -235,10 +241,11 @@ struct MainMapView: View {
 
     private func makeSampleMember(_ member: FirebaseCircleMember, tint: SampleTint) -> SampleMember {
         let live = liveLocations.locationsByUserID[member.id]
+        let name = member.displayName(asViewedBy: authService.user?.uid)
         return SampleMember(
             id: member.id,
-            name: member.displayName,
-            initials: initials(for: member.displayName),
+            name: name,
+            initials: initials(for: name),
             tint: tint,
             presence: presence(for: member, live: live),
             place: member.sharingEnabled ? (live == nil ? "Waiting for location" : "Live") : "Sharing paused",
@@ -251,7 +258,8 @@ struct MainMapView: View {
             lastUpdate: lastUpdateText(for: live),
             accuracy: live?.horizontalAccuracy.map { "Within \(Int($0)) m" } ?? "Unknown",
             sharing: member.sharingEnabled ? "Sharing now" : "Sharing paused",
-            coordinate: live?.coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
+            coordinate: live?.coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            isSelf: member.id == authService.user?.uid
         )
     }
 
@@ -291,6 +299,53 @@ struct MainMapView: View {
         guard let live else { return "No updates yet" }
         if Date().timeIntervalSince(live.updatedAt) < 30 { return "Live now" }
         return Self.relativeFormatter.localizedString(for: live.updatedAt, relativeTo: Date())
+    }
+
+    /// Previously there was no UI signal at all when location access was
+    /// never granted or was denied — the member sheet just said "Waiting
+    /// for a location update" forever with nothing explaining why, and no
+    /// way back in if onboarding's permission step was skipped.
+    @ViewBuilder
+    private var locationPermissionBanner: some View {
+        switch locationService.authorizationStatus {
+        case .notDetermined:
+            permissionBanner(
+                message: "Turn on location to share your position with this circle.",
+                actionTitle: "Allow Location Access"
+            ) {
+                locationService.requestWhenInUseAuthorization()
+            }
+        case .denied, .restricted:
+            permissionBanner(
+                message: "Location access is off, so your own position can't be shared.",
+                actionTitle: "Open Settings"
+            ) {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func permissionBanner(message: String, actionTitle: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "location.slash")
+                .foregroundStyle(Color(.warmAmber))
+            Text(message)
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(actionTitle, action: action)
+                .font(.footnote.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(.calmTeal))
+        }
+        .padding(12)
+        .background(Color(uiColor: .systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
     }
 
     private var topBar: some View {

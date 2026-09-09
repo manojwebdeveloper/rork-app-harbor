@@ -1,3 +1,4 @@
+@preconcurrency import FirebaseAuth
 import SwiftUI
 
 /// Per-circle detail: members, invite, rename, and leave/delete. Pushed
@@ -6,6 +7,7 @@ import SwiftUI
 /// harbor-ios-standards this keeps its existing, already-real layout
 /// rather than an improvised redesign.
 struct CircleDetailView: View {
+    @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var circleService: CircleService
     @Environment(\.dismiss) private var dismiss
 
@@ -56,7 +58,7 @@ struct CircleDetailView: View {
                     ForEach(members) { member in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(member.displayName)
+                                Text(member.displayName(asViewedBy: authService.user?.uid))
                                 Text(member.role.capitalized)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)

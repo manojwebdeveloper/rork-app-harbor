@@ -64,6 +64,10 @@ struct SampleMember: Identifiable, Hashable {
     let accuracy: String
     let sharing: String
     let coordinate: CLLocationCoordinate2D
+    /// Whether this row is the signed-in user's own entry — the map pin and
+    /// status strip give it a distinct highlight so it reads as "you" at a
+    /// glance, the way Life360/Find My distinguish your own marker.
+    var isSelf = false
 
     var isBatteryLow: Bool {
         guard let batteryPercent else { return false }

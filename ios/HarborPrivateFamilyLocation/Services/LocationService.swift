@@ -2,6 +2,7 @@ import Combine
 import CoreLocation
 @preconcurrency import FirebaseDatabase
 @preconcurrency import FirebaseFirestore
+@preconcurrency import FirebaseFunctions
 import Foundation
 import UIKit
 
@@ -82,8 +83,25 @@ final class LocationService: NSObject, ObservableObject {
                     }
                     self.sharingCircleIDs = Set(ids)
                     self.updateTrackingState()
+                    self.ensureMembershipMirrors(for: ids)
                 }
             }
+    }
+
+    /// Defensive, idempotent — see `ensureCircleMembershipMirror` in the
+    /// Cloud Functions for why this exists. Best-effort: a failure here just
+    /// means the next time sharingCircleIDs changes (or the app relaunches)
+    /// it gets another chance, so it isn't worth surfacing to the user.
+    private func ensureMembershipMirrors(for circleIDs: [String]) {
+        guard isFirebaseConfigured else { return }
+        for circleID in circleIDs {
+            Functions.functions(region: "europe-west2").httpsCallable("ensureCircleMembershipMirror")
+                .call(["circleId": circleID]) { _, error in
+                    if let error {
+                        NSLog("[HarborPrivateFamilyLocationLocation] Failed to ensure RTDB mirror for circle %@: %@", circleID, error.localizedDescription)
+                    }
+                }
+        }
     }
 
     /// Harbor doesn't keep a location *history* — RTDB only ever holds each
@@ -142,7 +160,17 @@ final class LocationService: NSObject, ObservableObject {
         payload["isCharging"] = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
 
         for circleID in sharingCircleIDs {
-            Database.database().reference(withPath: "locations/\(circleID)/\(userID)").setValue(payload)
+            Database.database().reference(withPath: "locations/\(circleID)/\(userID)").setValue(payload) { error, _ in
+                if let error {
+                    // This was previously fire-and-forget with no error
+                    // handling at all — a silent RTDB rules rejection (e.g.
+                    // the circleMembers mirror a Cloud Function writes
+                    // best-effort never having landed) looked identical to
+                    // "no GPS fix yet" from the UI's point of view. Logging
+                    // it at least makes that failure mode visible.
+                    NSLog("[HarborPrivateFamilyLocationLocation] Failed to publish location for circle %@: %@", circleID, error.localizedDescription)
+                }
+            }
         }
     }
 }

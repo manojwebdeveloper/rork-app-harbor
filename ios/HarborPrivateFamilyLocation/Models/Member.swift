@@ -48,12 +48,22 @@ struct FirebaseCircleMember: Identifiable, Hashable {
         }
 
         id = userID
+        // Anonymous/guest sign-in has no Apple-provided name, so this is the
+        // common case, not an edge case — the fallback needs to read like a
+        // real label, not a leftover raw string built from the app's own name.
         displayName = (data["displayName"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty ?? "HarborPrivateFamilyLocation member"
+            .nilIfEmpty ?? "Guest"
         self.role = role
         sharingEnabled = data["sharingEnabled"] as? Bool ?? false
         joinedAt = (data["joinedAt"] as? Timestamp)?.dateValue()
+    }
+
+    /// The name to show *this* viewer — their own entry always reads "You",
+    /// regardless of whether a real display name is on file, matching how
+    /// the design distinguishes the self-entry from every named member.
+    func displayName(asViewedBy currentUserID: String?) -> String {
+        id == currentUserID ? "You" : displayName
     }
 }
 

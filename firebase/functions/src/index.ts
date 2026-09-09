@@ -407,6 +407,20 @@ export const updateCircleExpiry = onCall({region, enforceAppCheck: false}, async
   return {kind: "trip", expiresAtMs: requestedExpiryMs};
 });
 
+// The RTDB circleMembers mirror is written best-effort at circle-creation/
+// join time (see setMembershipMirror) and never retried — if that single
+// write ever failed, every location publish for the circle would be
+// silently rejected by RTDB rules forever, with nothing to surface why.
+// The client calls this defensively whenever it starts sharing with a
+// circle, so a dropped mirror write self-heals instead of staying broken.
+export const ensureCircleMembershipMirror = onCall({region, enforceAppCheck: false}, async (request) => {
+  const uid = requireUid(request.auth);
+  const circleId = requiredString(objectData(request.data), "circleId", 128);
+  await circleAndRole(circleId, uid, ["owner", "admin", "member"]);
+  await setMembershipMirror(circleId, uid, true);
+  return {ensured: true};
+});
+
 export const registerPushToken = onCall({region, enforceAppCheck: false}, async (request) => {
   const uid = requireUid(request.auth);
   const token = requiredString(objectData(request.data), "token", 4096);
