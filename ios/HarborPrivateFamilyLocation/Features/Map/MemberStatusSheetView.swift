@@ -60,16 +60,7 @@ struct MemberStatusSheetView: View {
 
             Spacer(minLength: 0)
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color(uiColor: .secondarySystemFill))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            GlassDismissButton(action: onClose)
         }
     }
 
@@ -153,11 +144,13 @@ struct MemberStatusSheetView: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 10) {
-            action("checkmark", "Check in")
-            action("arrow.triangle.turn.up.right.diamond.fill", "Directions")
-            action("bell.fill", "Notify me")
-            action("ellipsis", "More")
+        HarborGlassGroup(spacing: 10) {
+            HStack(spacing: 10) {
+                action("checkmark", "Check in")
+                action("arrow.triangle.turn.up.right.diamond.fill", "Directions")
+                action("bell.fill", "Notify me")
+                action("ellipsis", "More")
+            }
         }
     }
 
@@ -171,8 +164,10 @@ struct MemberStatusSheetView: View {
         .foregroundStyle(Color(.calmTeal))
         .frame(maxWidth: .infinity)
         .padding(.vertical, 13)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .harborGlass(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            fallback: Color(uiColor: .secondarySystemGroupedBackground)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color(.mineralBorder).opacity(0.6), lineWidth: 0.5)

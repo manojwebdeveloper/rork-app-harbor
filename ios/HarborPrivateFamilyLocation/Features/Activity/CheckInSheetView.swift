@@ -16,8 +16,12 @@ struct CheckInSheetView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Check in")
-                    .font(.title2.bold())
+                HStack {
+                    Text("Check in")
+                        .font(.title2.bold())
+                    Spacer(minLength: 0)
+                    GlassDismissButton { dismiss() }
+                }
 
                 VStack(spacing: 0) {
                     ForEach(Array(CheckIn.Message.allCases.enumerated()), id: \.element.id) { index, option in
@@ -88,11 +92,6 @@ struct CheckInSheetView: View {
 
                 PrimaryButton(title: isSending ? "Sending…" : "Send check-in", action: send)
                     .disabled(isSending)
-
-                Button("Cancel") { dismiss() }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(.calmTeal))
-                    .frame(maxWidth: .infinity, minHeight: 44)
             }
             .padding(20)
         }

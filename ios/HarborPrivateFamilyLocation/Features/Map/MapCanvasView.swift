@@ -55,15 +55,17 @@ struct MapCanvasView: View {
     }
 
     private var mapControlStack: some View {
-        VStack(spacing: 10) {
-            MapControlButton(symbol: "scope", isActive: false, accessibilityLabel: "Recenter on my location") {
-                recenterOnSelf()
-            }
-            MapControlButton(symbol: "location.north.line.fill", isActive: followsHeading, accessibilityLabel: "Toggle heading-up orientation") {
-                toggleHeading()
-            }
-            MapControlButton(symbol: "square.3.layers.3d", isActive: mapStyleOption != .standard, accessibilityLabel: "Change map layers") {
-                cycleMapStyle()
+        HarborGlassGroup(spacing: 10) {
+            VStack(spacing: 10) {
+                MapControlButton(symbol: "scope", isActive: false, accessibilityLabel: "Recenter on my location") {
+                    recenterOnSelf()
+                }
+                MapControlButton(symbol: "location.north.line.fill", isActive: followsHeading, accessibilityLabel: "Toggle heading-up orientation") {
+                    toggleHeading()
+                }
+                MapControlButton(symbol: "square.3.layers.3d", isActive: mapStyleOption != .standard, accessibilityLabel: "Change map layers") {
+                    cycleMapStyle()
+                }
             }
         }
     }
@@ -149,8 +151,11 @@ private struct MapControlButton: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(isActive ? Color(.calmTeal) : Color.primary)
                 .frame(width: 44, height: 44)
-                .background(Color(uiColor: .systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .harborGlass(
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                    tint: isActive ? Color(.calmTeal) : nil,
+                    fallback: Color(uiColor: .systemBackground)
+                )
                 .shadow(color: .black.opacity(0.1), radius: 10, y: 3)
         }
         .buttonStyle(.plain)

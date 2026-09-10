@@ -50,8 +50,7 @@ struct DigestNotificationPreviewView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 46, height: 46)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
+                        .harborGlass(in: Circle(), fallback: .ultraThinMaterial)
                 }
                 .buttonStyle(.plain)
                 .padding(.bottom, 30)

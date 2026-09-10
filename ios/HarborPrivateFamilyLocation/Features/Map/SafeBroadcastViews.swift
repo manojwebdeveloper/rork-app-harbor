@@ -15,8 +15,7 @@ struct SafeBroadcastButton: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 22)
             .padding(.vertical, 14)
-            .background(Color(.calmTeal))
-            .clipShape(Capsule())
+            .harborGlass(in: Capsule(), tint: Color(.calmTeal), fallback: Color(.calmTeal))
             .shadow(color: Color(.calmTeal).opacity(0.35), radius: 14, y: 6)
         }
         .buttonStyle(.plain)

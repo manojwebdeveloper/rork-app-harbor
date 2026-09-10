@@ -340,11 +340,15 @@ struct SmartAlertOptionPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.system(size: 22, weight: .bold))
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 16)
+            HStack {
+                Text(title)
+                    .font(.system(size: 22, weight: .bold))
+                Spacer(minLength: 0)
+                GlassDismissButton(action: onCancel)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -379,23 +383,8 @@ struct SmartAlertOptionPicker: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.field, style: .continuous))
                 .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
-
-            Button(action: onCancel) {
-                Text("Cancel")
-                    .font(.headline)
-                    .foregroundStyle(Color(.calmTeal))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(Color(uiColor: .systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.card, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: HarborPrivateFamilyLocationRadius.card, style: .continuous)
-                            .stroke(Color(.mineralBorder), lineWidth: 1)
-                    }
-            }
-            .buttonStyle(.plain)
-            .padding(20)
         }
         .background(Color(uiColor: .systemGroupedBackground))
     }

@@ -165,6 +165,12 @@ private struct HarborPrivateFamilyLocationTabBar: View {
                     .foregroundStyle(selection == tab ? Color(.calmTeal) : Color(.slate))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
+                    // A plain tint, not its own `.glassEffect()` — nesting a
+                    // second glass surface inside the bar's own glass capsule
+                    // (both in one GlassEffectContainer, overlapping) made the
+                    // system merge/composite them in front of this label. The
+                    // bar's single glass surface below is enough to read this
+                    // highlight as translucent along with everything else.
                     .background(selection == tab ? Color(.seaGlass).opacity(0.75) : .clear)
                     .clipShape(Capsule())
                 }
@@ -172,8 +178,7 @@ private struct HarborPrivateFamilyLocationTabBar: View {
             }
         }
         .padding(7)
-        .background(.regularMaterial)
-        .clipShape(Capsule())
+        .harborGlass(in: Capsule(), fallback: .regularMaterial)
         .overlay { Capsule().stroke(Color(.mineralBorder).opacity(0.7), lineWidth: 0.5) }
         .shadow(color: .black.opacity(0.10), radius: 20, y: 8)
     }
