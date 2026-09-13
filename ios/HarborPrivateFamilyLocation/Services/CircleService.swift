@@ -283,6 +283,43 @@ final class CircleService: ObservableObject {
             .setData(["sharingEnabled": isEnabled, "updatedAt": FieldValue.serverTimestamp()], merge: true)
     }
 
+    /// A one-off "notify me next time this member's status changes" flag —
+    /// see the member sheet's "Notify me" action. The `evaluateSmartAlert`
+    /// Cloud Function consumes (and deletes) it the next time it fires an
+    /// arrival/departure for `memberID`; the baseline lets a future richer
+    /// trigger tell whether something actually changed rather than just
+    /// firing on any write.
+    func requestMemberStatusNotification(circleID: String, memberID: String) async throws {
+        guard isFirebaseConfigured, let userID = observedUserID else {
+            throw CircleServiceError.firebaseNotConfigured
+        }
+        try await notifyRequestRef(circleID: circleID, memberID: memberID, requesterID: userID)
+            .setData(["requestedBy": userID, "requestedAt": FieldValue.serverTimestamp()])
+    }
+
+    func cancelMemberStatusNotification(circleID: String, memberID: String) async throws {
+        guard isFirebaseConfigured, let userID = observedUserID else {
+            throw CircleServiceError.firebaseNotConfigured
+        }
+        try await notifyRequestRef(circleID: circleID, memberID: memberID, requesterID: userID).delete()
+    }
+
+    /// Whether the current user already has a pending notify-me request for
+    /// this member, so the sheet can show the button's real toggled state
+    /// instead of always resetting to "off" when reopened.
+    func hasMemberStatusNotificationRequest(circleID: String, memberID: String) async throws -> Bool {
+        guard isFirebaseConfigured, let userID = observedUserID else { return false }
+        let snapshot = try await notifyRequestRef(circleID: circleID, memberID: memberID, requesterID: userID).getDocument()
+        return snapshot.exists
+    }
+
+    private func notifyRequestRef(circleID: String, memberID: String, requesterID: String) -> DocumentReference {
+        Firestore.firestore()
+            .collection("circles").document(circleID)
+            .collection("members").document(memberID)
+            .collection("notifyRequests").document(requesterID)
+    }
+
     private func call(
         _ name: String,
         payload: NSDictionary

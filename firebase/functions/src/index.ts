@@ -191,6 +191,60 @@ async function sendToMembers(
   }
 }
 
+// Single-recipient counterpart to sendToMembers, for pushes that are about
+// one specific user rather than a circle-wide fan-out (e.g. a "notify me"
+// request). Bypasses the per-category notification-preference/quiet-hours
+// gate deliberately: the recipient just asked, this once, to be told — not
+// a recurring preference those settings are meant to govern.
+async function sendToUser(
+  userId: string,
+  notification: {title: string; body: string},
+  data: Record<string, string>
+): Promise<void> {
+  const userSnapshot = await db.collection("users").doc(userId).get();
+  const tokens = userSnapshot.get("fcmTokens");
+  if (!Array.isArray(tokens) || tokens.length === 0) return;
+
+  try {
+    const response = await messaging.sendEachForMulticast({tokens, notification, data});
+    const staleTokens = response.responses
+      .map((result, index) => (result.success ? null : tokens[index]))
+      .filter((token): token is string => Boolean(token));
+    if (staleTokens.length > 0) {
+      await userSnapshot.ref.update({fcmTokens: FieldValue.arrayRemove(...staleTokens)});
+    }
+  } catch (error) {
+    logger.error(`Failed to send status-notify push to ${userId}`, error);
+  }
+}
+
+// Consumes every pending "Notify me" request (member sheet action) for
+// `memberId` in one shot, firing on the same arrival/departure signal
+// evaluateSmartAlert already reacts to. Deliberately scoped to that one
+// signal for now, not also "starts driving" (an RTDB-triggered function
+// watching every live location write is a materially bigger, separately
+// worth-testing change) — see CircleService.requestMemberStatusNotification.
+async function consumeStatusNotifyRequests(
+  circleId: string,
+  memberId: string,
+  memberName: string,
+  type: "arrival" | "departure"
+): Promise<void> {
+  const requestsRef = db.collection("circles").doc(circleId).collection("members").doc(memberId).collection("notifyRequests");
+  const snapshot = await requestsRef.get();
+  if (snapshot.empty) return;
+
+  const verb = type === "arrival" ? "arrived" : "left";
+  await Promise.all(snapshot.docs.map(async (requestDoc) => {
+    await sendToUser(
+      requestDoc.id,
+      {title: "Status update", body: `${memberName} just ${verb}.`},
+      {type: "statusNotify", circleId, memberId}
+    );
+    await requestDoc.ref.delete();
+  }));
+}
+
 async function deleteCircleData(circleId: string): Promise<void> {
   const circleRef = db.collection("circles").doc(circleId);
   const [members, invitations] = await Promise.all([
@@ -783,6 +837,8 @@ export const evaluateSmartAlert = onDocumentCreated(
       detail: type === "arrival" ? "Arrival alert" : "Departure alert",
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    await consumeStatusNotifyRequests(circleId, memberId, memberName, type);
 
     const ruleEvent = type === "arrival" ? "arrives" : "leaves";
     const rulesSnapshot = await placesRef.collection("alertRules")

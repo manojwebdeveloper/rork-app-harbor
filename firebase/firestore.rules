@@ -39,6 +39,19 @@ service cloud.firestore {
         // A member may only flip their own sharing toggle — everything else about
         // membership (role, joining, leaving) stays behind the callable functions.
         allow update: if isSelf(memberId) && onlyChanged(['sharingEnabled', 'updatedAt']);
+
+        // A one-off "notify me next time this member's status changes"
+        // request from the member-sheet action row — lighter weight than a
+        // Smart Alert rule, so it's just a flag a circle member sets on
+        // themselves, not something requiring the callable-function layer.
+        // The evaluateSmartAlert Cloud Function consumes and deletes it the
+        // next time it fires for this member; the requester can also cancel
+        // it themselves before that happens.
+        match /notifyRequests/{requesterId} {
+          allow read, delete: if isSelf(requesterId);
+          allow create: if isCircleMember(circleId) && requesterId == request.auth.uid;
+          allow update: if false;
+        }
       }
 
       // Saved places are visible to, and manageable by, any member of the circle —

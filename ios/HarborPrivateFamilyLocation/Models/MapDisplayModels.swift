@@ -74,6 +74,14 @@ struct SampleMember: Identifiable, Hashable {
         return batteryPercent <= 20
     }
 
+    /// `coordinate` falls back to (0, 0) when no RTDB tick has ever arrived
+    /// for this member (see `MainMapView.makeSampleMember`) — a real (0, 0)
+    /// fix is practically never a genuine family member's location, so it's
+    /// a safe sentinel for "nothing to get directions to yet".
+    var hasRealCoordinate: Bool {
+        coordinate.latitude != 0 || coordinate.longitude != 0
+    }
+
     static func == (lhs: SampleMember, rhs: SampleMember) -> Bool { lhs.id == rhs.id }
 
     func hash(into hasher: inout Hasher) {

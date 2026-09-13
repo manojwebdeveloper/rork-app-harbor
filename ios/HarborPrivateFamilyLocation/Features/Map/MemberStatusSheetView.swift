@@ -1,10 +1,17 @@
+import MapKit
 import SwiftUI
 
 /// Member detail sheet with the Phase 2 driving and low-battery states.
-/// Layout only — nothing here reads a real sensor, speed or battery level.
 struct MemberStatusSheetView: View {
     let member: SampleMember
     let onClose: () -> Void
+
+    @EnvironmentObject private var circleService: CircleService
+
+    @State private var isCheckingIn = false
+    @State private var isNotifyRequested = false
+    @State private var isTogglingNotify = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -18,11 +25,34 @@ struct MemberStatusSheetView: View {
                 }
 
                 actionRow
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Color(.signalRed))
+                }
+
                 detailCard
             }
             .padding(.horizontal, 20)
             .padding(.top, 22)
             .padding(.bottom, 30)
+        }
+        .task {
+            guard !member.isSelf, let circleID = circleService.selectedCircleID else { return }
+            isNotifyRequested = (try? await circleService.hasMemberStatusNotificationRequest(
+                circleID: circleID,
+                memberID: member.id
+            )) ?? false
+        }
+        .sheet(isPresented: $isCheckingIn) {
+            if let circleID = circleService.selectedCircleID {
+                CheckInSheetView(circleID: circleID) {
+                    isCheckingIn = false
+                }
+                .presentationDetents([.medium, .large])
+                .presentationContentInteraction(.scrolls)
+            }
         }
     }
 
@@ -143,34 +173,87 @@ struct MemberStatusSheetView: View {
         }
     }
 
+    /// A check-in posts *your own* status — it's never "for" someone else —
+    /// so it only makes sense on your own entry, not another member's. The
+    /// same reasoning runs the other way for the other two: getting
+    /// directions to yourself, or asking to be notified when your own
+    /// status changes, isn't a real action either. So rather than showing
+    /// all three (minus "More") on every sheet, each sheet shows only the
+    /// actions that are actually about *that* entry.
+    @ViewBuilder
     private var actionRow: some View {
         HarborGlassGroup(spacing: 10) {
             HStack(spacing: 10) {
-                action("checkmark", "Check in")
-                action("arrow.triangle.turn.up.right.diamond.fill", "Directions")
-                action("bell.fill", "Notify me")
-                action("ellipsis", "More")
+                if member.isSelf {
+                    action("checkmark", "Check in") { isCheckingIn = true }
+                } else {
+                    action("arrow.triangle.turn.up.right.diamond.fill", "Directions") {
+                        openDirections()
+                    }
+                    .disabled(!member.hasRealCoordinate)
+
+                    action(
+                        isNotifyRequested ? "bell.fill" : "bell",
+                        isNotifyRequested ? "Notifying…" : "Notify me",
+                        isActive: isNotifyRequested
+                    ) {
+                        Task { await toggleNotify() }
+                    }
+                    .disabled(isTogglingNotify)
+                }
             }
         }
     }
 
-    private func action(_ symbol: String, _ title: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
+    private func action(_ symbol: String, _ title: String, isActive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(isActive ? Color.white : Color(.calmTeal))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .harborGlass(
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                tint: isActive ? Color(.calmTeal) : nil,
+                fallback: isActive ? Color(.calmTeal) : Color(uiColor: .secondarySystemGroupedBackground)
+            )
+            .overlay {
+                if !isActive {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color(.mineralBorder).opacity(0.6), lineWidth: 0.5)
+                }
+            }
         }
-        .foregroundStyle(Color(.calmTeal))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 13)
-        .harborGlass(
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
-            fallback: Color(uiColor: .secondarySystemGroupedBackground)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color(.mineralBorder).opacity(0.6), lineWidth: 0.5)
+        .buttonStyle(.plain)
+    }
+
+    private func openDirections() {
+        guard member.hasRealCoordinate else { return }
+        let placemark = MKPlacemark(coordinate: member.coordinate)
+        let mapItem = MKMapItem(placemark: placemark)
+        mapItem.name = member.name
+        mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault])
+    }
+
+    private func toggleNotify() async {
+        guard let circleID = circleService.selectedCircleID else { return }
+        isTogglingNotify = true
+        errorMessage = nil
+        defer { isTogglingNotify = false }
+        do {
+            if isNotifyRequested {
+                try await circleService.cancelMemberStatusNotification(circleID: circleID, memberID: member.id)
+                isNotifyRequested = false
+            } else {
+                try await circleService.requestMemberStatusNotification(circleID: circleID, memberID: member.id)
+                isNotifyRequested = true
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

@@ -94,9 +94,12 @@ struct MainMapView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                if let selectedCircle, selectedCircle.isTrip, isTripBannerVisible, isEndingSoon {
+                if let selectedCircle, selectedCircle.isTrip, isTripBannerVisible,
+                   let expiresAt = selectedFirebaseCircle?.expiresAt, isEndingSoon(expiresAt) {
                     TripEndingBanner(
                         circleName: selectedCircle.name,
+                        expiresAt: expiresAt,
+                        isOwner: selectedFirebaseCircle?.role == "owner",
                         onExtend: { Task { await extendTrip() } },
                         onKeepPermanently: { Task { await keepPermanently() } },
                         onLetItEnd: dismissTripBanner
@@ -225,11 +228,16 @@ struct MainMapView: View {
         allMembers.filter { !$0.isSelf }
     }
 
-    private var isEndingSoon: Bool {
-        guard let expiresAt = circleService.circles.first(where: { $0.id == circleService.selectedCircleID })?.expiresAt else {
-            return false
-        }
-        return expiresAt.timeIntervalSinceNow <= 24 * 60 * 60
+    /// The real Firestore-backed circle behind `selectedCircle` — the single
+    /// source both the header's "Ends ..." text and the trip-ending banner
+    /// must read `expiresAt` (and the current user's `role`) from, so the
+    /// two can never disagree about when the circle actually closes.
+    private var selectedFirebaseCircle: FirebaseCircleSummary? {
+        circleService.circles.first { $0.id == circleService.selectedCircleID }
+    }
+
+    private func isEndingSoon(_ expiresAt: Date) -> Bool {
+        expiresAt.timeIntervalSinceNow <= 24 * 60 * 60
     }
 
     private var mappedCircles: [SampleCircle] {
@@ -256,12 +264,13 @@ struct MainMapView: View {
     private func makeSampleMember(_ member: FirebaseCircleMember, tint: SampleTint) -> SampleMember {
         let live = liveLocations.locationsByUserID[member.id]
         let name = member.displayName(asViewedBy: authService.user?.uid)
+        let presence = presence(for: member, live: live)
         return SampleMember(
             id: member.id,
             name: name,
             initials: initials(for: name),
             tint: tint,
-            presence: presence(for: member, live: live),
+            presence: presence,
             place: member.sharingEnabled ? (live == nil ? "Waiting for location" : "Live") : "Sharing paused",
             statusDetail: statusDetail(for: member, live: live),
             batteryPercent: live?.batteryLevel,
@@ -271,7 +280,7 @@ struct MainMapView: View {
                 ?? "No location shared yet",
             lastUpdate: lastUpdateText(for: live),
             accuracy: live?.horizontalAccuracy.map { "Within \(Int($0)) m" } ?? "Unknown",
-            sharing: member.sharingEnabled ? "Sharing now" : "Sharing paused",
+            sharing: sharingText(for: member, presence: presence, live: live),
             coordinate: live?.coordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0),
             isSelf: member.id == authService.user?.uid
         )
@@ -291,6 +300,25 @@ struct MainMapView: View {
         guard member.sharingEnabled else { return "Sharing paused" }
         guard live != nil else { return "Waiting for a location update" }
         return lastUpdateText(for: live)
+    }
+
+    /// The detail sheet's "Sharing" row was previously just `sharingEnabled
+    /// ? "Sharing now" : "Sharing paused"` — completely independent of the
+    /// same staleness signal driving the presence dot right above it, so a
+    /// member stuck on a 2-day-old location (a red/`.stopped` dot) still
+    /// read "Sharing now" a few rows down. Deriving it from `presence`
+    /// instead means the two can never contradict each other again.
+    private func sharingText(
+        for member: FirebaseCircleMember,
+        presence: SamplePresence,
+        live: LiveCircleLocationsService.LiveLocation?
+    ) -> String {
+        guard member.sharingEnabled else { return "Sharing paused" }
+        guard presence != .stopped else {
+            guard let live else { return "Waiting for location" }
+            return "Last seen \(lastUpdateText(for: live))"
+        }
+        return "Sharing now"
     }
 
     private func speedText(for live: LiveCircleLocationsService.LiveLocation?) -> String? {
@@ -430,7 +458,7 @@ struct MainMapView: View {
 
     private func extendTrip() async {
         guard let circleID = circleService.selectedCircleID,
-              let currentExpiry = circleService.circles.first(where: { $0.id == circleID })?.expiresAt else { return }
+              let currentExpiry = selectedFirebaseCircle?.expiresAt else { return }
         isUpdatingTrip = true
         defer { isUpdatingTrip = false }
         do {
