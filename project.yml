@@ -44,7 +44,7 @@ targets:
       path: ios/HarborPrivateFamilyLocation/Resources/Info.plist
       properties:
         UILaunchScreen: {}
-        CFBundleDisplayName: "Harbor:Private Family Location"
+        CFBundleDisplayName: "Harbor"
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         CFBundleURLTypes:

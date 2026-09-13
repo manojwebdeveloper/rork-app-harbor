@@ -528,7 +528,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HarborPrivateFamilyLocation/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Harbor:Private Family Location";
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Harbor uses background location to keep an active sharing session updated after you leave the app.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Harbor uses your location only when you choose to share it with a circle.";
@@ -567,7 +567,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HarborPrivateFamilyLocation/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Harbor:Private Family Location";
+				INFOPLIST_KEY_CFBundleDisplayName = Harbor;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Harbor uses background location to keep an active sharing session updated after you leave the app.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Harbor uses your location only when you choose to share it with a circle.";
