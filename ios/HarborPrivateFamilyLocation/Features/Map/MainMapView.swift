@@ -25,6 +25,7 @@ struct MainMapView: View {
     @State private var isShowingInvite = false
     @State private var errorMessage: String?
     @State private var path: [MapRoute] = []
+    @State private var hasRequestedAlwaysAuthorization = false
 
     private static let mapTintPalette: [SampleTint] = [.teal, .coral, .sky, .amber]
 
@@ -170,6 +171,28 @@ struct MainMapView: View {
                 isShowingSafeReceipt = false
             }
         }
+        .onAppear { requestAlwaysAuthorizationIfNeeded() }
+    }
+
+    /// Apple's own guidance (and App Review) expects the "Always" upgrade to
+    /// arrive as a distinct follow-up once the user actually understands why
+    /// background sharing matters — never immediately back-to-back with the
+    /// "When In Use" prompt onboarding already asks for, since iOS itself
+    /// tends to silently no-op a second request fired too soon after the
+    /// first. Landing on the map with a real circle already in place (this
+    /// view only renders once `circleService.circles` is non-empty — see
+    /// `body`) is that moment: the user has just gone from "setting up" to
+    /// "about to actually share with people", which is exactly when sharing
+    /// while backgrounded starts to matter. A no-op unless the user is
+    /// still sitting at plain "When In Use" — already-Always, denied, and
+    /// not-yet-determined are all left alone, and `hasRequestedAlwaysAuthorization`
+    /// keeps this to once per app session rather than re-asking every time
+    /// the tab reappears.
+    private func requestAlwaysAuthorizationIfNeeded() {
+        guard !hasRequestedAlwaysAuthorization,
+              locationService.authorizationStatus == .authorizedWhenInUse else { return }
+        hasRequestedAlwaysAuthorization = true
+        locationService.requestAlwaysAuthorization()
     }
 
     private var emptyState: some View {
